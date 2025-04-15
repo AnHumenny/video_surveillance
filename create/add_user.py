@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 name_db = os.getenv("DB_CAMERA")
-password = hashlib.sha256("password".encode()).hexdigest()   #временно, до увязки с БД
+password = hashlib.sha256("password".encode()).hexdigest()  #временно, до увязки с БД
 user_info = ["username", f"{password}", "user"]  #временно, до увязки с БД
 
 
