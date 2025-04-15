@@ -1,0 +1,65 @@
+# Папки и файлы для исключения
+.env
+
+# Папки виртуального окружения
+venv/
+env/
+.env/
+.venv/
+env.bak/
+venv.bak/
+
+# Папки с кэшами
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Папки с временными файлами
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+
+# Папки с зависимостями
+*.egg-info/
+dist/
+build/
+versions/
+
+# Настройки IDE
+.idea/
+.vscode/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+# Другие файлы
+*.coverage
+*.hypothesis/
+.coverage.*
+.cache
+*.egg
+
+# Файлы конфигурации
+*.json
+*.yml
+*.yaml
+*.ini
+
+# текстовые файлы
+*.txt
+*.doc
+*.docx
+*.csv
+*.pdf
+*.fb2
+*.epub
+
+# Графические файлы
+*.jpg
+*.png
+*.jpeg
+*.gif

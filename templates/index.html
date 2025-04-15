@@ -1,0 +1,26 @@
+<html>
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div align="center">
+        <h3>Выберите камеру</h3>
+    </div>
+    <div class="camera-buttons">
+        {% for cam_id, url in camera_configs.items() %}
+            {% if loop.index0 % 3 == 0 and loop.index0 != 0 %}
+                </div><div class="camera-row">
+            {% endif %}
+            {% if loop.index0 % 3 == 0 %}
+                <div class="camera-row">
+            {% endif %}
+            <a href="/video/{{ cam_id }}">
+                <button class="camera-btn">Камера {{ cam_id }}</button>
+            </a>
+            {% if loop.last and loop.index0 % 3 != 2 %}
+                </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+</body>
+</html>
