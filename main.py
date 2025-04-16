@@ -1,12 +1,15 @@
+import hashlib
 import cv2
 import os
 import time
 import asyncio
 import json
-from quart import Quart, Response, render_template
+from quart import Quart, Response, render_template, request, redirect, jsonify, url_for, session
 import signal
 import sys
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature, BadData
 from dotenv import load_dotenv
+from schemas.repository import Repo
 
 load_dotenv()
 
@@ -14,6 +17,9 @@ os.environ[
     "OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|buffer_size;4194304|timeout;10000000|flags;discardcorrupt"
 
 app = Quart(__name__)
+app.secret_key = os.urandom(24)
+serializer = URLSafeTimedSerializer(app.secret_key)
+
 app.template_folder = "templates"
 
 class CameraManager:
@@ -103,6 +109,28 @@ async def generate_frames(cap, cam_id):
             print(f"Ошибка в генераторе кадров для камеры {cam_id}: {e}")
             break
 
+def generate_token(username):
+    return serializer.dumps(username)
+
+def verify_token(token):
+    """Верификация токена"""
+    try:
+        username = serializer.loads(token, max_age=3600)
+        return username
+    except SignatureExpired:
+        print("Токен истек.")
+        return None
+    except BadSignature:
+        print("Недействительная подпись токена.")
+        return None
+    except BadData:
+        print("Некорректные данные токена.")
+        return None
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
+        return None
+
+
 @app.route('/video/<cam_id>')
 async def video_feed(cam_id):
     """Маршрут для видеопотока с выбранной камеры"""
@@ -120,10 +148,41 @@ async def video_feed(cam_id):
     return Response(stream(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
+
+def hash_password(password: str) -> str:
+    """Хеширование пароля."""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+@app.route('/login', methods=['GET', 'POST'])
+async def login():
+    """Авторизация."""
+    form_data = await request.form
+    username = form_data.get('user')
+    password = form_data.get('password')
+    hashed_password = hash_password(password)
+    answer = await Repo.auth_user(username, hashed_password)
+    print("answer", answer)
+    token = session.get('token')  # Извлечение токена из сессии
+    access = verify_token(token)
+    if access:
+        return await render_template("index.html", camera_configs=camera_manager.camera_configs,
+                                     access=access)
+    if answer is True:
+        token = generate_token(username)
+        session['token'] = token
+        return redirect(url_for('index'))
+    return jsonify({"message": "Ошибка доступа"}), 401
+
+
 @app.route('/')
 async def index():
     """Главная страница с выбором камер"""
-    return await render_template("index.html", camera_configs=camera_manager.camera_configs)
+    token = session.get('token')
+    access = verify_token(token)
+    return await render_template("index.html", camera_configs=camera_manager.camera_configs,
+                                 access=access)
+
 
 async def cleanup():
     """Очистка ресурсов при завершении"""

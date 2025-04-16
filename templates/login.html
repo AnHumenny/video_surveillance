@@ -1,0 +1,23 @@
+<table width="50%" align="center">
+    <tr>
+        <th valign="2"  class="title-table table-item th-item">
+            <br><br><br>
+            <h5>Ввод данных</h5>
+
+            <form method="post" action="/login" enctype="multipart/form-data">
+                <label>Логин:&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; </label>
+                <input type="text" name="user" required><br><br>
+
+                <label>Пароль:&nbsp;  &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;</label>
+                <input type="password" name="password" required><br><br>
+
+                <input type="submit" value="Загрузить">
+            </form>
+        </th>
+    <tr>
+    <tr>
+        <th>
+            {{ success }}
+        </th>
+    </tr>
+</table>
