@@ -3,6 +3,25 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    {% if not access %}
+    <div align="right">
+    <form method="POST" action="/login">
+        <input type="text" name="user" placeholder="Username">
+        <input type="password" name="password" placeholder="Password">
+        <button type="submit">Войти</button>
+    </form>
+     </div>
+    {% endif %}
+    {% if access %}
+    <div align="right">
+    <h4>Панель управления</h4>
+<!--    <form method="POST" action="/panel">-->
+<!--        <input type="text" name="user" placeholder="Username">-->
+<!--        <input type="password" name="password" placeholder="Password">-->
+<!--        <button type="submit">Войти</button>-->
+<!--    </form>-->
+     </div>
+    {% endif %}
     <div align="center">
         <h3>Выберите камеру</h3>
     </div>
