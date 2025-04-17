@@ -5,15 +5,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-name_db = os.getenv("DB_CAMERA")
-password = hashlib.sha256("password".encode()).hexdigest()   #временно, до увязки с БД
-user_info = ["username", f"{password}", "user"]  #временно, до увязки с БД
+name_db = os.getenv("DATABASE")
+password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()   #временно, до увязки с БД
+user_info = ["1", f"{password}", "user"]  #временно, до увязки с БД
 
 
 def insert_into_user():
     """Добавляем первичного пользователя(данные берём из .env)"""
     user_table = "_user"
-    db_path = os.path.join('..', f'{name_db}.db')
+    db_path = os.path.join("..", f'{name_db}.db')
     try:
         conn = sqlite3.connect(db_path)
         sql = f'''INSERT INTO {user_table} (user, password, status) VALUES (?, ?, ?)'''

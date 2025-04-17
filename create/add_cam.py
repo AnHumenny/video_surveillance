@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-name_db = os.getenv("DB_CAMERA")
+name_db = os.getenv("DATABASE")
 if not name_db:
     raise ValueError("Переменная DB_CAMERA не задана в .env")
 

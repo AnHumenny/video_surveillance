@@ -1,0 +1,22 @@
+<html>
+<head>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    {% if status != "admin" %}
+    <div align="right">
+    <form method="POST" action="/login">
+        <input type="text" name="user" placeholder="Username">
+        <input type="password" name="password" placeholder="Password">
+        <button type="submit">Войти</button>
+    </form>
+     </div>
+    {% endif %}
+    {% if status == "admin" %}
+    <div align="center">
+    <h4>Панель управления</h4>
+    <a href="{{ url_for('logout') }}">Выйти</a>
+    </div>
+    {% endif %}
+</body>
+</html>

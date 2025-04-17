@@ -4,10 +4,13 @@ import os
 import time
 import asyncio
 import json
-from quart import Quart, Response, render_template, request, redirect, jsonify, url_for, session
+from quart import Quart, request, jsonify, render_template, make_response, Response,redirect, url_for, session
 import signal
 import sys
-from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature, BadData
+from itsdangerous import URLSafeTimedSerializer
+from functools import wraps
+import jwt
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from schemas.repository import Repo
 
@@ -109,26 +112,25 @@ async def generate_frames(cap, cam_id):
             print(f"Ошибка в генераторе кадров для камеры {cam_id}: {e}")
             break
 
-def generate_token(username):
-    return serializer.dumps(username)
+def generate_token(username, status):
+    """генерация токена"""
+    payload = {
+        'user': username,
+        'status': status,
+        'exp': datetime.now(timezone.UTC) + timedelta(hours=1)
+    }
+    return jwt.encode(payload, os.getenv("SECRET_KEY"), algorithm='HS256')
 
 def verify_token(token):
-    """Верификация токена"""
+    """верификация токена"""
+    if not token:
+        return False, None
     try:
-        username = serializer.loads(token, max_age=3600)
-        return username
-    except SignatureExpired:
-        print("Токен истек.")
-        return None
-    except BadSignature:
-        print("Недействительная подпись токена.")
-        return None
-    except BadData:
-        print("Некорректные данные токена.")
-        return None
-    except Exception as e:
-        print(f"Произошла ошибка: {e}")
-        return None
+        payload = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=['HS256'])
+        status = payload.get('status')
+        return True, status
+    except (jwt.InvalidTokenError, jwt.ExpiredSignatureError):
+        return False, None
 
 
 @app.route('/video/<cam_id>')
@@ -154,34 +156,90 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 
+
 @app.route('/login', methods=['GET', 'POST'])
 async def login():
     """Авторизация."""
+    if request.method == 'GET':
+        return await render_template('login.html')
+
     form_data = await request.form
     username = form_data.get('user')
     password = form_data.get('password')
     hashed_password = hash_password(password)
-    answer = await Repo.auth_user(username, hashed_password)
-    print("answer", answer)
-    token = session.get('token')  # Извлечение токена из сессии
-    access = verify_token(token)
-    if access:
-        return await render_template("index.html", camera_configs=camera_manager.camera_configs,
-                                     access=access)
-    if answer is True:
-        token = generate_token(username)
-        session['token'] = token
-        return redirect(url_for('index'))
+    user = await Repo.auth_user(username, hashed_password)
+    if user:
+        status = user.status
+        if user is None:
+            return jsonify({"message": "Статус пользователя не определен"}), 401
+
+        token = jwt.encode(
+            {
+                'username': username,
+                'status': status,
+                'exp': datetime.utcnow() + timedelta(hours=24)
+            },
+            app.config['SECRET_KEY'],
+            algorithm='HS256'
+        )
+        response = await render_template(
+            "index.html",
+            camera_configs=camera_manager.camera_configs,
+            username=username,
+            status=status
+        )
+        response = await make_response(response)
+        response.set_cookie('token', token, httponly=True, secure=True)
+        return response
     return jsonify({"message": "Ошибка доступа"}), 401
 
 
-@app.route('/')
+def token_required(f):
+    """проверка валидности токена"""
+    @wraps(f)
+    async def decorated(*args, **kwargs):
+        token = request.cookies.get('token')
+        if not token:
+            return jsonify({"message": "Токен отсутствует"}), 401
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            if data['status'] != 'admin':
+                return jsonify({"message": "Недостаточно прав"}), 403
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Токен истек"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"message": "Неверный токен"}), 401
+        return await f(*args, **kwargs)
+    return decorated
+
+@app.route('/control')
+@token_required
+async def control():
+    """Панель управления."""
+    return await render_template('control.html', status='admin')
+
+@app.route('/logout')
+async def logout():
+    """Выход"""
+    session.pop('token', None)
+    return redirect(url_for('login'))
+
+
+@app.route('/', methods=['GET'])
 async def index():
     """Главная страница с выбором камер"""
     token = session.get('token')
-    access = verify_token(token)
+    user, status = verify_token(token)
+    if not user:
+        return redirect(url_for('login'))
+
+    username = None
+    if token:
+        payload = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=['HS256'])
+        username = payload.get('user')
+
     return await render_template("index.html", camera_configs=camera_manager.camera_configs,
-                                 access=access)
+                                user=user, username=username)
 
 
 async def cleanup():
