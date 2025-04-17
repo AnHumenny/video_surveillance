@@ -36,7 +36,7 @@ class Repo:
             answer = result.scalar()
             if answer is None:
                 return None
-            return True
+            return answer
 
     @classmethod
     async def select_users(cls):
