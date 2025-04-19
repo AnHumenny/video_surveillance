@@ -1,7 +1,5 @@
 <html>
-<head>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% include 'head.html' %}
 <body>
     <div align="right">
         {% if username %}
@@ -13,6 +11,7 @@
         {% if username %}
         </div>
             {% endif %}
+
         <div align="center">
             <h3>Выберите камеру</h3>
         </div>

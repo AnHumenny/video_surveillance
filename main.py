@@ -216,7 +216,37 @@ def token_required(f):
 @token_required
 async def control():
     """Панель управления."""
+    all_cameras = await Repo.select_all_cam()
+    user_host = os.getenv("HOST")
+    user_port = os.getenv("PORT")
+    return await render_template('control.html', all_cameras=all_cameras,
+                                 host=user_host, port=user_port, status='admin')
+
+@app.route('/all_cam')
+async def list_all_cameras():
+    """Список всех камер."""
+    q = await Repo.select_all_cam()
+    if not q:
+        return {"message": "Камер не найдено!"}
     return await render_template('control.html', status='admin')
+
+
+@app.route('/delete_cam')    #в доработку
+async def delete_camera():
+    """Удаление камеры."""
+    pass
+
+
+@app.route('/add_cam', methods=['POST'])
+async def add_new_camera():
+    """Добавить новую камеру."""
+    form_data = await request.form
+    new_cam = form_data.get("new_cam")   #добавить проверку на соответствие видеопотока rtsp
+    q = await Repo.add_new_cam(new_cam)
+    if not q:
+        return {"message": "Камера не добавлена!"}
+    return redirect(url_for('control'))
+
 
 @app.route('/logout')
 async def logout():
@@ -250,7 +280,7 @@ async def cleanup():
 async def main():
     """Основная функция для запуска приложения"""
     try:
-        await app.run_task(host='0.0.0.0', port=8001)
+        await app.run_task(host=os.getenv("HOST"), port=int(os.getenv("PORT")))
     except asyncio.CancelledError:
         await cleanup()
 
