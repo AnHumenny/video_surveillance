@@ -76,28 +76,54 @@ class Repo:
             result = await session.execute(q)
             return result.scalars().all()
 
-    #проверить
     @classmethod
-    async def insert_new_camera(cls, items):
-        """Inserts a new camera into the DBook table.
+    async def select_all_cam(cls):
+        """Select all cameras from database.
 
             Args:
                 cls: Class reference (unused).
-                items: Dictionary or list of dictionaries with book data to insert.
 
             Raises:
                 Exception: If insertion fails, with rollback performed.
             """
         async with new_session() as session:
+            try:
+                q = select(DCamera)
+                result = await session.execute(q)
+                cameras = result.scalars().all()
+                return cameras
+            except Exception as e:
+                print(f"Ошибка: {e}")
+                raise e
+
+
+    @classmethod
+    async def add_new_cam(cls, new_cam):
+        """Inserts a new camera into the DBook table.
+
+            Args:
+                cls: Class reference (unused).
+                new_cam: str (e.g. rtsp://user:password@192.168.1.34:554/h265).
+
+            Raises:
+                Exception: If insertion fails, with rollback performed.
+            """
+        print("Добавляем новую камеру", new_cam)
+        async with new_session() as session:
             async with session.begin():
                 try:
-                    q = insert(DCamera).values(items)
+                    q = insert(DCamera).values(path_to_cam=new_cam)
                     await session.execute(q)
                     await session.commit()
-                    return
+                    return f"Камера {new_cam} успешно добавлена!"
+                except IntegrityError as e:
+                    await session.rollback()
+                    print(f"Ошибка: Камера с адресом {new_cam} уже существует", e)
+                    return f"Камера с адресом {new_cam} уже существует"    #допилить вывод значения под полем добавления при условии существования записи
                 except Exception as e:
                     await session.rollback()
-                    raise e
+                    print(f"Ошибка: {e}")
+                    return e
 
     # проверить
     @classmethod

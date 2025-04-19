@@ -1,7 +1,4 @@
-<html>
-<head>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% include 'head.html' %}
 <body>
     {% if status != "admin" %}
     <div align="right">
@@ -13,10 +10,39 @@
      </div>
     {% endif %}
     {% if status == "admin" %}
-    <div align="center">
-    <h4>Панель управления</h4>
-    <a href="{{ url_for('logout') }}">Выйти</a>
+    <div align="right">
+    <h5>Панель управления | <a href="{{ url_for('logout') }}">Выйти</a> </h5>
+    </div>
+    <div>
+        {% include 'head.html' %}
+
+    <table width="90%" align="center" border="1" valign="top">
+        <tr>
+            <th valign="top"  class="title-table table-item th-item" width="50%" rowspan="100">
+                <br><br><br>
+                <h5>Добавить камеру</h5>
+
+                <form method="post" action="/add_cam" enctype="multipart/form-data">
+                    <label>Маршрут:&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&nbsp;  </label>
+                    <input type="text" name="new_cam" required><br><br>
+
+                <input type="submit" value="Добавить">
+            </form>
+                <br><br><br>
+        <p>Добавить пользователя</p>
+
+        </th>
+        <th class="title-table table-item th-item" width="50%" align="left">
+            <p align="center">Список камер</p>
+
+                {% for row in all_cameras %}
+                    <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ row.id }}: {{ row.path_to_cam }}</a>
+             | удалить <br>  <!--  допилить фиксированный размер -->
+            {% endfor %}
+
+            </th>
+        </tr>
+    </table>
     </div>
     {% endif %}
 </body>
-</html>
