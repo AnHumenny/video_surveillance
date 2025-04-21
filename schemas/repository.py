@@ -1,3 +1,5 @@
+import sqlite3
+import json
 from sqlalchemy import select, insert, delete, and_
 from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -161,3 +163,22 @@ class Repo:
                 print("error", e)
                 await session.rollback()
                 return False
+
+    @staticmethod
+    def select_all_cameras_to_json():
+        """Синхронная выборка всех камер из таблицы _camera в формате JSON-словаря."""
+        path_to_database = os.path.join(".", f"{os.getenv('DATABASE')}.db")
+        try:
+            conn = sqlite3.connect(path_to_database)
+            cursor = conn.cursor()
+            q = "SELECT id, path_to_cam FROM _camera"
+            cursor.execute(q)
+            result = cursor.fetchall()
+            json_result = {str(row[0]): row[1] for row in result}
+            return json.dumps(json_result, ensure_ascii=False)
+        except sqlite3.Error as e:
+            print(f"Ошибка базы данных: {e}")
+            return json.dumps({})
+        finally:
+            if conn:
+                conn.close()

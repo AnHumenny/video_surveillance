@@ -3,9 +3,9 @@
 <body>
     <div align="right">
         {% if username %}
-            Привет, {{ username }} <br>
-        {% endif %}
-        {% if status == "admin" %}
+            Привет, {{ username }}  <br>
+<!--        {% endif %}-->
+<!--        {% if status == "admin" %}-->
             <a href="/control"><h4>Панель управления</h4></a>
         {% endif %}
         {% if username %}
@@ -13,7 +13,46 @@
             {% endif %}
 
         <div align="center">
-            <h3>Выберите камеру</h3>
+            <h3>Выберите камеру || <a href="#" onclick="reloadCameras()">Обновить список</a></h3>
+
+<script>
+    async function reloadCameras() {
+        try {
+            const response = await fetch('/reload-cameras', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                console.log('Список камер обновлен:', data.camera_configs);
+                const notification = document.getElementById('notification');
+                notification.style.display = 'block';
+                notification.textContent = 'Список камер успешно обновлен!';
+                const tbody = document.getElementById('cameraTable').querySelector('tbody');
+                tbody.innerHTML = '';
+                for (const [id, url] of Object.entries(data.camera_configs)) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td>${id}</td><td>${url}</td>`;
+                    tbody.appendChild(row);
+                }
+                setTimeout(() => {
+                    console.log('Перезагрузка страницы...');
+                    window.location.reload();
+                }, 5000);
+            } else {
+                console.error('Ошибка:', data.error);
+                alert('Ошибка: ' + data.error);
+            }
+        } catch (error) {
+            console.error('Ошибка сети:', error);
+            alert('Список камер успешно обновлен! Переинициализация камер. Если страница не перезагрузится через 5 секунд, обновите принудительно');
+        }
+    }
+</script>
         </div>
         <div class="camera-buttons">
             {% for cam_id, url in camera_configs.items() %}

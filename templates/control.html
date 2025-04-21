@@ -11,7 +11,7 @@
     {% endif %}
     {% if status == "admin" %}
     <div align="right">
-    <h5>Панель управления | <a href="{{ url_for('logout') }}">Выйти</a> </h5>
+    <h5>Панель управления  || <a href="{{ url_for('index') }}">На главную</a>  ||  <a href="{{ url_for('logout') }}">Выйти</a> </h5>
     </div>
     <div>
         {% include 'head.html' %}
@@ -37,7 +37,7 @@
 
                 {% for row in all_cameras %}
                     <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ row.id }}: {{ row.path_to_cam }}</a>
-             | удалить <br>  <!--  допилить фиксированный размер -->
+                | удалить <br>  <!--  допилить фиксированный размер -->
             {% endfor %}
 
             </th>
