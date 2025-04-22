@@ -3,7 +3,8 @@ import json
 import cv2
 import os
 import asyncio
-from quart import Quart, request, jsonify, render_template, make_response, Response,redirect, url_for, session
+from quart import Quart, request, jsonify, render_template, make_response, Response, redirect, url_for, session, flash, \
+    get_flashed_messages
 import signal
 import sys
 from functools import wraps
@@ -139,10 +140,10 @@ async def control():
     all_cameras = await Repo.select_all_cam()
     user_host = os.getenv("HOST")
     user_port = os.getenv("PORT")
+    messages = get_flashed_messages(with_categories=True)
     return await render_template('control.html', all_cameras=all_cameras,
-                                 host=user_host, port=user_port, status='admin')
+                                 host=user_host, port=user_port, messages=messages, status='admin')
 
-@app.route('/all_cam')
 async def list_all_cameras():
     """Список всех камер."""
     q = await Repo.select_all_cam()
@@ -151,21 +152,65 @@ async def list_all_cameras():
     return await render_template('control.html', status='admin')
 
 
-@app.route('/delete_cam')    #в доработку
-async def delete_camera():
-    """Удаление камеры."""
-    pass
+@app.route('/delete_camera/<int:ssid>', methods=['GET', 'POST'])
+async def delete_camera(ssid):
+    success = await Repo.drop_camera(ssid)
+    if success:
+        print(f"Камера с id={ssid} удалена")
+        return redirect(url_for('control'))
+    return jsonify({"error": "Камера не найдена"}), 404
 
 
-@app.route('/add_cam', methods=['POST'])
+@app.route('/edit_camera')    #в доработку
+async def edit_camera():
+    """Редактирование маршрута камеры."""
+    return redirect(url_for('control'))
+
+
+async def check_rtsp(path_to_cam):
+    """Проверка на rtsp."""
+    q = path_to_cam[0:4]
+    if q != "rtsp":
+        return False
+    return True
+
+
+@app.route('/add_camera', methods=['POST', 'GET'])
 async def add_new_camera():
     """Добавить новую камеру."""
     form_data = await request.form
-    new_cam = form_data.get("new_cam")   #добавить проверку на соответствие видеопотока rtsp
+    new_cam = form_data.get("new_cam")
+    print(f"Попытка добавить камеру: {new_cam}")
+    if not new_cam:
+        await flash("URL камеры не указан!", "error")
+        print("Ошибка: URL камеры не указан")
+        return redirect(url_for("control"))
+
+    query = await check_rtsp(new_cam)
+    if query is False:
+        await flash("Ошибка: Некорректный RTSP URL", "error")
+        print(f"Ошибка: Некорректный RTSP URL: {new_cam}")
+        return redirect(url_for("control"))
+
     q = await Repo.add_new_cam(new_cam)
-    if not q:
-        return {"message": "Камера не добавлена!"}
-    return redirect(url_for('control'))
+    print("запрос на добавление камеры", q)
+    if q is False:
+        await flash("Камера не добавлена: такой URL уже существует или произошла ошибка!", "error")
+        print(f"Ошибка: Не удалось добавить камеру: {new_cam}")
+        return redirect(url_for("control"))
+
+    await flash("Камера успешно добавлена!", "success")
+    print(f"Успех: Камера добавлена: {new_cam}")
+    return redirect(url_for("control"))
+
+
+@app.route('/add_user', methods=['POST'])
+async def add_new_user():
+    """Добавить нового пользователя."""
+    form_data = await request.form
+    user = form_data.get("new_cam")
+    password = form_data.get("new_cam")
+    pass
 
 
 @app.route('/logout')
