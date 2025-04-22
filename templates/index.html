@@ -1,74 +1,88 @@
-<html>
 {% include 'head.html' %}
 <body>
-    <div align="right">
-        {% if username %}
-            Привет, {{ username }}  <br>
-<!--        {% endif %}-->
-<!--        {% if status == "admin" %}-->
-            <a href="/control"><h4>Панель управления</h4></a>
-        {% endif %}
-        {% if username %}
-        </div>
+<div class="container">
+        <div class="header">
+            {% if username %}
+                <span>Привет, {{ username }}</span> &nbsp;&nbsp;&nbsp;
+                {% if status == "admin" %}
+                    <a href="{{ url_for('control') }}"><h4>Панель управления</h4></a>
+                {% endif %}
             {% endif %}
-
-        <div align="center">
-            <h3>Выберите камеру || <a href="#" onclick="reloadCameras()">Обновить список</a></h3>
-
-<script>
-    async function reloadCameras() {
-        try {
-            const response = await fetch('/reload-cameras', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                console.log('Список камер обновлен:', data.camera_configs);
-                const notification = document.getElementById('notification');
-                notification.style.display = 'block';
-                notification.textContent = 'Список камер успешно обновлен!';
-                const tbody = document.getElementById('cameraTable').querySelector('tbody');
-                tbody.innerHTML = '';
-                for (const [id, url] of Object.entries(data.camera_configs)) {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td>${id}</td><td>${url}</td>`;
-                    tbody.appendChild(row);
-                }
-                setTimeout(() => {
-                    console.log('Перезагрузка страницы...');
-                    window.location.reload();
-                }, 5000);
-            } else {
-                console.error('Ошибка:', data.error);
-                alert('Ошибка: ' + data.error);
-            }
-        } catch (error) {
-            console.error('Ошибка сети:', error);
-            alert('Список камер успешно обновлен! Переинициализация камер. Если страница не перезагрузится через 5 секунд, обновите принудительно');
-        }
-    }
-</script>
         </div>
+
+        <div class="main-title" align="center">
+            <h3>Выберите камеру &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;||&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <a href="#" onclick="reloadCameras()">Обновить список</a></h3>
+        </div>
+
+        <div id="notification" class="notification"></div>
+
         <div class="camera-buttons">
             {% for cam_id, url in camera_configs.items() %}
-                {% if loop.index0 % 3 == 0 and loop.index0 != 0 %}
-                    </div><div class="camera-row">
-                {% endif %}
                 {% if loop.index0 % 3 == 0 %}
                     <div class="camera-row">
                 {% endif %}
-                <a href="/video/{{ cam_id }}">
-                    <button class="camera-btn">Камера {{ cam_id }}</button>
+                <a href="{{ url_for('video_feed', cam_id=cam_id) }}">
+                    <button class="camera-btn">Камера {{ cam_id }}</button> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 </a>
-                {% if loop.last and loop.index0 % 3 != 2 %}
+                {% if loop.index0 % 3 == 2 or loop.last %}
                     </div>
                 {% endif %}
             {% endfor %}
         </div>
-    </body>
-</html>
+
+        <script>
+            async function reloadCameras() {
+                try {
+                    const response = await fetch('/reload-cameras', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        console.log('Список камер обновлен:', data.camera_configs);
+                        const notification = document.getElementById('notification');
+                        notification.style.display = 'block';
+                        notification.textContent = 'Список камер успешно обновлен! Переинициализация камер. Если страница не перезагрузится через 5 секунд, обновите принудительно';
+                        const tbody = document.getElementById('cameraTable')?.querySelector('tbody');
+                        if (tbody) {
+                            tbody.innerHTML = '';
+                            for (const [id, url] of Object.entries(data.camera_configs)) {
+                                const row = document.createElement('tr');
+                                row.innerHTML = `<td>${id}</td><td>${url}</td>`;
+                                tbody.appendChild(row);
+                            }
+                        }
+                        setTimeout(() => {
+                            console.log('Перезагрузка страницы...');
+                            window.location.reload();
+                        }, 5000);
+                    } else {
+                        console.error('Ошибка:', data.error);
+                        const notification = document.getElementById('notification');
+                        notification.style.display = 'block';
+                        notification.style.color = 'red';
+                        notification.style.backgroundColor = '#ffe6e6';
+                        notification.style.borderColor = 'red';
+                        notification.textContent = 'Ошибка: ' + data.error;
+                    }
+                } catch (error) {
+                    console.error('Ошибка сети:', error);
+                    const notification = document.getElementById('notification');
+                    notification.style.display = 'block';
+                    notification.style.color = 'red';
+                    notification.style.backgroundColor = '#ffe6e6';
+                    notification.style.borderColor = 'red';
+                    notification.textContent = 'Список камер успешно обновлен! Переинициализация камер. Если страница не перезагрузится через 5 секунд, обновите принудительно';
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 5000);
+                }
+            }
+        </script>
+    </div>
+</body>

@@ -101,7 +101,7 @@ class Repo:
 
     @classmethod
     async def add_new_cam(cls, new_cam):
-        """Inserts a new camera into the DBook table.
+        """Inserts a new camera into the DCamera table.
 
             Args:
                 cls: Class reference (unused).
@@ -121,7 +121,7 @@ class Repo:
                 except IntegrityError as e:
                     await session.rollback()
                     print(f"Ошибка: Камера с адресом {new_cam} уже существует", e)
-                    return f"Камера с адресом {new_cam} уже существует"    #допилить вывод значения под полем добавления при условии существования записи
+                    return False
                 except Exception as e:
                     await session.rollback()
                     print(f"Ошибка: {e}")
@@ -130,7 +130,7 @@ class Repo:
     # проверить
     @classmethod
     async def drop_camera(cls, ssid):
-        """Deletes a book record from the DCamera table by ID.
+        """Deletes a camera record from the DCamera table by ID.
 
             Args:
                 cls: Class reference (unused).
@@ -153,11 +153,11 @@ class Repo:
                 result = await session.execute(query)
                 record = result.scalar_one_or_none()
                 if record is None:
-                    return f"Запись с указанным идентификатором {ssid} не найдена."
+                    return f"Камера с указанным идентификатором {ssid} не найдена."
                 delete_query = delete(DCamera).where(DCamera.id == int(ssid))
                 await session.execute(delete_query)
                 await session.commit()
-                return f"Файл с указанным идентификатором {ssid} успешно удалён!"
+                return f"Камера с идентификатором {ssid} успешно удалёна!"
 
             except (ValueError, NoResultFound, IntegrityError, SQLAlchemyError) as e:
                 print("error", e)
