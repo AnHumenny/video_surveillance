@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import cv2
 import os
 import asyncio
@@ -23,9 +24,7 @@ app = Quart(__name__)
 app.secret_key = os.urandom(24)
 
 app.template_folder = "templates"
-
-camera_manager = None
-
+camera_manager = CameraManager()
 
 @app.before_serving
 async def setup_camera_manager():
@@ -37,7 +36,7 @@ async def setup_camera_manager():
 async def shutdown_camera_manager():
     global camera_manager
     if camera_manager:
-        await camera_manager.cleanup()    # type: ignore
+        await camera_manager.cleanup()
 
 
 async def generate_frames(cap, cam_id):
@@ -121,7 +120,7 @@ async def video_feed(cam_id):
     """Маршрут для видеопотока с выбранной камеры."""
     if camera_manager is None:
         return "CameraManager не инициализирован", 500
-    cap = await camera_manager.get_camera(cam_id)    # type: ignore
+    cap = await camera_manager.get_camera(cam_id)
     if not cap:
         return "Камера не найдена или недоступна", 404
     async def stream():
@@ -138,10 +137,11 @@ async def video_feed(cam_id):
 async def control():
     """Панель управления."""
     all_cameras = await Repo.select_all_cam()
+    all_users = await Repo.select_all_users()
     user_host = os.getenv("HOST")
     user_port = os.getenv("PORT")
     messages = get_flashed_messages(with_categories=True)
-    return await render_template('control.html', all_cameras=all_cameras,
+    return await render_template('control.html', all_cameras=all_cameras, all_users=all_users,
                                  host=user_host, port=user_port, messages=messages, status='admin')
 
 async def list_all_cameras():
@@ -154,11 +154,24 @@ async def list_all_cameras():
 
 @app.route('/delete_camera/<int:ssid>', methods=['GET', 'POST'])
 async def delete_camera(ssid):
+    """Удаление камеры по id"""
     success = await Repo.drop_camera(ssid)
     if success:
-        print(f"Камера с id={ssid} удалена")
         return redirect(url_for('control'))
     return jsonify({"error": "Камера не найдена"}), 404
+
+
+@app.route('/delete_user/<int:ssid>', methods=['GET'])
+async def delete_user(ssid):
+    """Удаление пользователя по id."""
+    if ssid == 1:
+        await flash("Суперадмин не удаляется", "admin_not_deleted")
+        return redirect(url_for('control'))
+    success = await Repo.drop_user(ssid)
+    if success:
+        await flash("Пользователь успешно удалён", "user_deleted")
+        return redirect(url_for('control'))
+    return jsonify({"error": "Пользователь не найден"}), 404
 
 
 @app.route('/edit_camera')    #в доработку
@@ -180,37 +193,46 @@ async def add_new_camera():
     """Добавить новую камеру."""
     form_data = await request.form
     new_cam = form_data.get("new_cam")
-    print(f"Попытка добавить камеру: {new_cam}")
     if not new_cam:
         await flash("URL камеры не указан!", "error")
-        print("Ошибка: URL камеры не указан")
         return redirect(url_for("control"))
-
     query = await check_rtsp(new_cam)
     if query is False:
-        await flash("Ошибка: Некорректный RTSP URL", "error")
-        print(f"Ошибка: Некорректный RTSP URL: {new_cam}")
+        await flash("Ошибка: Некорректный RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-
     q = await Repo.add_new_cam(new_cam)
-    print("запрос на добавление камеры", q)
     if q is False:
-        await flash("Камера не добавлена: такой URL уже существует или произошла ошибка!", "error")
-        print(f"Ошибка: Не удалось добавить камеру: {new_cam}")
+        await flash("Камера не добавлена: такой URL уже существует или произошла ошибка!",
+                    "camera_error")
         return redirect(url_for("control"))
-
-    await flash("Камера успешно добавлена!", "success")
-    print(f"Успех: Камера добавлена: {new_cam}")
+    await flash("Камера успешно добавлена!", "camera_success")
     return redirect(url_for("control"))
 
 
-@app.route('/add_user', methods=['POST'])
+async def select_all_users():
+    """Список всех пользователей"""
+    q = Repo.select_all_users()
+    return q
+
+
+PASSWORD_PATTERN = r"^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=\S+$).{8,20}$"
+
+@app.route('/add_user', methods=['POST', 'GET'])
 async def add_new_user():
     """Добавить нового пользователя."""
     form_data = await request.form
-    user = form_data.get("new_cam")
-    password = form_data.get("new_cam")
-    pass
+    user = form_data.get("new_user")
+    password = form_data.get("new_password")
+    if not re.match(PASSWORD_PATTERN, password):
+        await flash("Длина пароля не соответствует!", "password_error")
+        return redirect(url_for("control"))
+    pswrd = hash_password(password)
+    q = await Repo.add_new_user(user, pswrd)
+    if q is False:
+        await flash("Такой пользователь уже существует!", "user_error")
+        return redirect(url_for("control"))
+    await flash("Пользователь успешно добавлен!", "user_success")
+    return redirect(url_for("control"))
 
 
 @app.route('/logout')
@@ -224,7 +246,6 @@ async def logout():
 async def index():
     """Главная страница с выбором камер."""
     token = request.cookies.get('token')
-    print("это токен", token)
     if token:
         try:
             payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
@@ -233,7 +254,7 @@ async def index():
             if username and status:
                 response = await render_template(
                     "index.html",
-                    camera_configs=camera_manager.camera_configs,  # type: ignore
+                    camera_configs=camera_manager.camera_configs,
                     username=username,
                     status=status
                 )
@@ -272,7 +293,7 @@ async def login():
         )
         response = await render_template(
             "index.html",
-            camera_configs=camera_manager.camera_configs,  # type: ignore
+            camera_configs=camera_manager.camera_configs,
             username=username,
             status=status
         )
@@ -316,8 +337,7 @@ async def reload_cameras():
 
 async def cleanup():
     """Очистка ресурсов при завершении"""
-    print("Завершение работы...")
-    camera_manager.cleanup()   # type: ignore
+    await camera_manager.cleanup()
 
 
 async def main():

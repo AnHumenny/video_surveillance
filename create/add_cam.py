@@ -8,7 +8,7 @@ name_db = os.getenv("DATABASE")
 if not name_db:
     raise ValueError("Переменная DB_CAMERA не задана в .env")
 
-camera_info = "rtsp://user:!password@192.168.1.34:554/h265"  # Временно, до увязки с БД
+camera_info = "rtsp://user:!password@192.168.1.34:554/h265"
 
 def insert_into_camera():
     """Добавляем камеру в таблицу _camera."""

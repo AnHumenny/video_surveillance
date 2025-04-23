@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-name_db = os.getenv("DB_CAMERA")
+name_db = os.getenv("DATABASE")
 
 
 def create_db():

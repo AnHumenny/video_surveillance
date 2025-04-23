@@ -2,7 +2,7 @@
         body {
             background-color: #f4f4f9;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 14px;
+            font-size: 12px;
             color: #333;
             margin: 0;
             padding: 20px;
@@ -11,21 +11,21 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 0 15px;
+            padding: 0 12px;
         }
         .header {
             display: flex;
             justify-content: flex-end;
             align-items: center;
             margin-bottom: 20px;
-            font-size: 14px;
+            font-size: 12px;
             color: #333;
             margin: 0;
             padding: 20px;
         }
         .header h5 {
             margin: 0;
-            font-size: 1.2rem;
+            font-size: 1rem;
             display: flex;
             align-items: center;
         }
@@ -53,7 +53,7 @@
             margin-bottom: 20px;
         }
         .add-camera h5, .add-user h5, .camera-list h5 {
-            margin: 0 0 15px;
+            margin: 0 0 12px;
             font-size: 1.1rem;
             color: #333;
         }
