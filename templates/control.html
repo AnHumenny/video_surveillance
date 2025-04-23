@@ -12,8 +12,10 @@
         {% if status == "admin" %}
             <div class="header">
                 <h5>Панель управления
-                    <a href="{{ url_for('index') }}"><img src="{{ url_for('static', filename='image/home.png') }}" alt="Главная"></a>
-                    <a href="{{ url_for('logout') }}"><img src="{{ url_for('static', filename='image/exit.png') }}" alt="Выйти"></a>
+                    <a href="{{ url_for('index') }}">
+                        <img src="{{ url_for('static', filename='image/home.png') }}" alt="Главная"></a>
+                    <a href="{{ url_for('logout') }}">
+                        <img src="{{ url_for('static', filename='image/exit.png') }}" alt="Выйти"></a>
                 </h5>
             </div>
             <div class="content">
@@ -25,26 +27,52 @@
                             <input type="text" name="new_cam" id="new_cam" required>
                             <input type="submit" value="Добавить">
                         </form>
-                        {% if messages %}
-                            {% for category, message in messages %}
-                                <p class="message-{{ category }}">{{ message }}</p>
+                        {% if get_flashed_messages(with_categories=True) %}
+                            {% for category, message in get_flashed_messages(with_categories=True) %}
+                                {% if category in ['camera_success', 'camera_error', 'rtsp_error'] %}
+                                    <p class="message-{{ category }}">{{ message }}</p>
+                                {% endif %}
                             {% endfor %}
                         {% endif %}
                     </div>
                     <div class="add-user">
                         <h5>Добавить пользователя</h5>
-                        <p>Функция в разработке</p>
+                        <form method="post" action="{{ url_for('add_new_user') }}" enctype="multipart/form-data">
+                            <input type="text" name="new_user" id="new_user" required>
+                            <input type="text" name="new_password" id="new_password" required>
+                            <input type="submit" value="Добавить">
+                        </form>
+                        {% if get_flashed_messages(with_categories=True) %}
+                            {% for category, message in get_flashed_messages(with_categories=True) %}
+                                {% if category in ['user_success', 'user_error', 'user_deleted',
+                                'admin_not_deleted', 'password_error'] %}
+                                    <p class="message-{{ category }}">{{ message }}</p>
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                        {% for row in all_users %}
+                            <div class="camera-item">
+                                {{ row.id  }} || {{ row.user  }} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
+                                <a href="{{ url_for('delete_user', ssid=row.id) }}">
+                                    <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить"></a>
+                            </div>
+                        {% endfor %}
                     </div>
                 </div>
                 <div class="right-column">
                     <div class="camera-list">
-                        <h5>Список камер</h5>
+                        <h5>Список камер || <a href="#" onclick="reloadCameras()">
+                                                      Переинициализировать камеры
+                                                  </a></h5>
                         {% for row in all_cameras %}
                             <div class="camera-item">
                                 {{ row.id }}:
                                 <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ row.path_to_cam }}</a>
-                                <a href="{{ url_for('edit_camera', ssid=row.id) }}"><img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать"></a>
-                                <a href="{{ url_for('delete_camera', ssid=row.id) }}"><img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить"></a>
+                                <a href="{{ url_for('edit_camera', ssid=row.id) }}">
+                                <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать"></a>
+                                <a href="{{ url_for('delete_camera', ssid=row.id) }}">
+                                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить"></a>
                             </div>
                         {% endfor %}
                     </div>

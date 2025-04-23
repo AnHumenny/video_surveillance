@@ -1,0 +1,8 @@
+SIZE_VIDEO=1280,720
+DATABASE="db_name"
+SECRET_KEY="your_secret_key"
+HOST="127.0.0.1"
+PORT="8001"
+
+ADMIN="user"
+PASSWORD="password"

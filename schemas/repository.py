@@ -98,6 +98,29 @@ class Repo:
                 print(f"Ошибка: {e}")
                 raise e
 
+    @classmethod
+    async def select_all_users(cls):
+        """Select all users from database, returning only id and user fields.
+
+        Args:
+            cls: Class reference (unused).
+
+        Returns:
+            List of tuples containing (id, user) for each user.
+
+        Raises:
+            Exception: If query fails, with rollback performed.
+        """
+        async with new_session() as session:
+            try:
+                q = select(DUser.id, DUser.user)
+                result = await session.execute(q)
+                users = result.all()
+                return users
+            except Exception as e:
+                print(f"Ошибка: {e}")
+                raise e
+
 
     @classmethod
     async def add_new_cam(cls, new_cam):
@@ -127,7 +150,35 @@ class Repo:
                     print(f"Ошибка: {e}")
                     return e
 
-    # проверить
+    @classmethod
+    async def add_new_user(cls, user, password):
+        """Inserts a new user into the DUser table.
+
+            Args:
+                cls: Class reference (unused).
+                user: str
+                password: str (e.g. r'^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=S+$).{8,20}$').
+
+            Raises:
+                Exception: If insertion fails, with rollback performed.
+            """
+        async with new_session() as session:
+            async with session.begin():
+                try:
+                    q = insert(DUser).values(user=user, password=password)
+                    await session.execute(q)
+                    await session.commit()
+                    return f"Пользователь {user} успешно добавлена!"
+                except IntegrityError as e:
+                    print(f"Ошибка: {e}")
+                    await session.rollback()
+                    return False
+                except Exception as e:
+                    await session.rollback()
+                    print(f"Ошибка: {e}")
+                    return e
+
+
     @classmethod
     async def drop_camera(cls, ssid):
         """Deletes a camera record from the DCamera table by ID.
@@ -146,23 +197,58 @@ class Repo:
                 IntegrityError: If deletion violates database constraints.
                 SQLAlchemyError: If other database errors occur.
             """
-        ssid = int(ssid)
         async with new_session() as session:
+            ssid = int(ssid)
             try:
-                query = select(DCamera).where(DCamera.id == int(ssid))
+                query = select(DCamera).where(DCamera.id == int(ssid)) # type: ignore
                 result = await session.execute(query)
                 record = result.scalar_one_or_none()
                 if record is None:
                     return f"Камера с указанным идентификатором {ssid} не найдена."
-                delete_query = delete(DCamera).where(DCamera.id == int(ssid))
+                delete_query = delete(DCamera).where(DCamera.id == int(ssid))  # type: ignore
                 await session.execute(delete_query)
                 await session.commit()
                 return f"Камера с идентификатором {ssid} успешно удалёна!"
-
             except (ValueError, NoResultFound, IntegrityError, SQLAlchemyError) as e:
                 print("error", e)
                 await session.rollback()
                 return False
+
+    @classmethod
+    async def drop_user(cls, ssid):
+        """Deletes a user record from the DUser table by ID.
+
+            Args:
+                cls: Class reference (unused).
+                ssid: ID of the user record to delete (converted to int).
+
+            Returns:
+                str: Success message if deletion succeeds, error message if record not found,
+                     False if an exception occurs.
+
+            Raises:
+                ValueError: If ssid cannot be converted to an integer.
+                NoResultFound: If no record matches the given ID.
+                IntegrityError: If deletion violates database constraints.
+                SQLAlchemyError: If other database errors occur.
+            """
+        async with new_session() as session:
+            ssid = int(ssid)
+            try:
+                query = select(DUser).where(DUser.id == int(ssid))  # type: ignore
+                result = await session.execute(query)
+                record = result.scalar_one_or_none()
+                if record is None:
+                    return f"Пользователь с указанным идентификатором {ssid} не найдена."
+                delete_query = delete(DUser).where(DUser.id == int(ssid))  # type: ignore
+                await session.execute(delete_query)
+                await session.commit()
+                return f"Пользователь с идентификатором {ssid} успешно удалёна!"
+            except (ValueError, NoResultFound, IntegrityError, SQLAlchemyError) as e:
+                print("error", e)
+                await session.rollback()
+                return False
+
 
     @staticmethod
     def select_all_cameras_to_json():
@@ -175,10 +261,8 @@ class Repo:
             cursor.execute(q)
             result = cursor.fetchall()
             json_result = {str(row[0]): row[1] for row in result}
+            conn.close()
             return json.dumps(json_result, ensure_ascii=False)
         except sqlite3.Error as e:
             print(f"Ошибка базы данных: {e}")
             return json.dumps({})
-        finally:
-            if conn:
-                conn.close()

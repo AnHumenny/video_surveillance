@@ -1,3 +1,56 @@
 <head>
     <link rel="stylesheet" href="{{ url_for('static', filename='style/style.css') }}">
+    <script>
+            async function reloadCameras() {
+                try {
+                    const response = await fetch('/reload-cameras', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        console.log('Список камер обновлен:', data.camera_configs);
+                        const notification = document.getElementById('notification');
+                        notification.style.display = 'block';
+                        notification.textContent = 'Список камер успешно обновлен! Переинициализация камер. Если страница не перезагрузится через 5 секунд, обновите принудительно';
+                        const tbody = document.getElementById('cameraTable')?.querySelector('tbody');
+                        if (tbody) {
+                            tbody.innerHTML = '';
+                            for (const [id, url] of Object.entries(data.camera_configs)) {
+                                const row = document.createElement('tr');
+                                row.innerHTML = `<td>${id}</td><td>${url}</td>`;
+                                tbody.appendChild(row);
+                            }
+                        }
+                        setTimeout(() => {
+                            console.log('Перезагрузка страницы...');
+                            window.location.reload();
+                        }, 5000);
+                    } else {
+                        console.error('Ошибка:', data.error);
+                        const notification = document.getElementById('notification');
+                        notification.style.display = 'block';
+                        notification.style.color = 'red';
+                        notification.style.backgroundColor = '#ffe6e6';
+                        notification.style.borderColor = 'red';
+                        notification.textContent = 'Ошибка: ' + data.error;
+                    }
+                } catch (error) {
+                    console.error('Ошибка сети:', error);
+                    const notification = document.getElementById('notification');
+                    notification.style.display = 'block';
+                    notification.style.color = 'red';
+                    notification.style.backgroundColor = '#ffe6e6';
+                    notification.style.borderColor = 'red';
+                    notification.textContent = 'Список камер успешно обновлен! Переинициализация камер. Если страница не перезагрузится через 5 секунд, обновите принудительно';
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 5000);
+                }
+            }
+        </script>
 </head>

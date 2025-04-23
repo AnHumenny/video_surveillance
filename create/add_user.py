@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 name_db = os.getenv("DATABASE")
-password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()   #временно, до увязки с БД
-user_info = ["1", f"{password}", "user"]  #временно, до увязки с БД
+password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()
+user_info = ["odmin", f"{password}", "admin"]
 
 
 def insert_into_user():
