@@ -132,13 +132,13 @@ class Repo:
 
     @classmethod
     async def select_all_users(cls):
-        """Select all users from database, returning only id and user fields.
+        """Select all users from database, returning id, user, status fields.
 
         Args:
             cls: Class reference (unused).
 
         Returns:
-            List of tuples containing (id, user) for each user.
+            List of tuples containing (id, user, status) for each user.
 
         Raises:
             Exception: If query fails, with rollback performed.
@@ -302,14 +302,11 @@ class Repo:
 
     @classmethod
     async def check_cam(cls, check_cam):
-        """Inserts a new camera into the DCamera table.
+        """Check path_to_cam if not exist in DCamera.
 
             Args:
                 cls: Class reference (unused).
                 check_cam: str (e.g. rtsp://user:password@192.168.1.34:554/h265).
-
-            Raises:
-                Exception: If insertion fails, with rollback performed.
             """
         async with new_session() as session:
             async with session.begin():
