@@ -96,7 +96,7 @@ def hash_password(password: str) -> str:
 
 
 def token_required(f):
-    """проверка валидности токена"""
+    """проверка валидности токена(admin(панель управления))"""
     @wraps(f)
     async def decorated(*args, **kwargs):
         token = request.cookies.get('token')
@@ -114,8 +114,27 @@ def token_required(f):
     return decorated
 
 
+def token_required_camera(f):
+    """проверка валидности токена(admin, user(камеры))"""
+    @wraps(f)
+    async def decorated(*args, **kwargs):
+        token = request.cookies.get('token')
+        if not token:
+            return jsonify({"message": "Токен отсутствует"}), 401
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            if data['status'] not in ['admin', 'user']:
+                return jsonify({"message": "Недостаточно прав"}), 403
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Токен истек"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"message": "Неверный токен"}), 401
+        return await f(*args, **kwargs)
+    return decorated
+
+
 @app.route('/video/<cam_id>')
-@token_required
+@token_required_camera
 async def video_feed(cam_id):
     """Маршрут для видеопотока с выбранной камеры."""
     if camera_manager is None:
@@ -174,12 +193,6 @@ async def delete_user(ssid):
     return jsonify({"error": "Пользователь не найден"}), 404
 
 
-@app.route('/edit_camera')    #в доработку
-async def edit_camera():
-    """Редактирование маршрута камеры."""
-    return redirect(url_for('control'))
-
-
 async def check_rtsp(path_to_cam):
     """Проверка на rtsp."""
     q = path_to_cam[0:4]
@@ -223,14 +236,30 @@ async def add_new_user():
     form_data = await request.form
     user = form_data.get("new_user")
     password = form_data.get("new_password")
+    status = form_data.get("status")
     if not re.match(PASSWORD_PATTERN, password):
         await flash("Длина пароля не соответствует!", "password_error")
         return redirect(url_for("control"))
     pswrd = hash_password(password)
-    q = await Repo.add_new_user(user, pswrd)
+    q = await Repo.add_new_user(user, pswrd, status)
     if q is False:
         await flash("Такой пользователь уже существует!", "user_error")
         return redirect(url_for("control"))
+    await flash("Пользователь успешно добавлен!", "user_success")
+    return redirect(url_for("control"))
+
+
+@app.route('/edit_cam', methods=['POST', 'GET'])
+async def edit_cam():
+    """Редактировать маршрут камеры."""
+    form_data = await request.form
+    ssid = form_data.get("cameraId")
+    path_to_cam = form_data.get("cameraPath")
+    query = await check_rtsp(path_to_cam)
+    if query is False:
+        await flash("Ошибка: Некорректный RTSP URL", "rtsp_error")
+        return redirect(url_for("control"))
+    await Repo.edit_camera(ssid, path_to_cam)
     await flash("Пользователь успешно добавлен!", "user_success")
     return redirect(url_for("control"))
 
@@ -240,6 +269,10 @@ async def logout():
     """Выход"""
     session.pop('token', None)
     return redirect(url_for('login'))
+
+
+async def motion():
+    pass
 
 
 @app.route('/', methods=['GET'])

@@ -1,6 +1,7 @@
 import hashlib
 import sqlite3
 import os
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -65,4 +66,5 @@ def insert_into_user():
         conn.close()
 
 create_db()
+time.sleep(1)
 insert_into_user()

@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from sqlalchemy import select, insert, delete, and_
+from sqlalchemy import select, insert, delete, and_, update
 from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from schemas.database import DCamera, DUser
@@ -79,6 +79,38 @@ class Repo:
             return result.scalars().all()
 
     @classmethod
+    async def edit_camera(cls, ssid, path_to_cam):
+        """Edit path to camera.
+
+            Args:
+                cls: Class reference (unused).
+                ssid: int
+                path_to_cam: str
+
+            Returns:
+                200 if ok
+
+            """
+        async with (new_session() as session):
+            ssid = int(ssid)
+            try:
+                q = update(DCamera).where(DCamera.id == int(ssid)    # type: ignore
+                                          ).values(path_to_cam=path_to_cam)
+                await session.execute(q)
+                await session.commit()
+                return f"Камера {ssid} успешно добавлена!"
+            except IntegrityError as e:
+                await session.rollback()
+                print(f"Ошибка: Камера с адресом {ssid} уже существует", e)
+                return False
+
+            except Exception as e:
+                await session.rollback()
+                print(f"Ошибка: {e}")
+                return e
+
+
+    @classmethod
     async def select_all_cam(cls):
         """Select all cameras from database.
 
@@ -113,7 +145,7 @@ class Repo:
         """
         async with new_session() as session:
             try:
-                q = select(DUser.id, DUser.user)
+                q = select(DUser.id, DUser.user, DUser.status)
                 result = await session.execute(q)
                 users = result.all()
                 return users
@@ -151,13 +183,14 @@ class Repo:
                     return e
 
     @classmethod
-    async def add_new_user(cls, user, password):
+    async def add_new_user(cls, user, password, status):
         """Inserts a new user into the DUser table.
 
             Args:
                 cls: Class reference (unused).
                 user: str
                 password: str (e.g. r'^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=S+$).{8,20}$').
+                status: str
 
             Raises:
                 Exception: If insertion fails, with rollback performed.
@@ -165,7 +198,7 @@ class Repo:
         async with new_session() as session:
             async with session.begin():
                 try:
-                    q = insert(DUser).values(user=user, password=password)
+                    q = insert(DUser).values(user=user, password=password, status=status)
                     await session.execute(q)
                     await session.commit()
                     return f"Пользователь {user} успешно добавлена!"
@@ -266,3 +299,25 @@ class Repo:
         except sqlite3.Error as e:
             print(f"Ошибка базы данных: {e}")
             return json.dumps({})
+
+    @classmethod
+    async def check_cam(cls, check_cam):
+        """Inserts a new camera into the DCamera table.
+
+            Args:
+                cls: Class reference (unused).
+                check_cam: str (e.g. rtsp://user:password@192.168.1.34:554/h265).
+
+            Raises:
+                Exception: If insertion fails, with rollback performed.
+            """
+        async with new_session() as session:
+            async with session.begin():
+                try:
+                    q = select(DCamera).where(path_to_cam=check_cam)
+                    if q is None:
+                        return False
+                    return True
+                except ValueError as e:
+                    return e
+
