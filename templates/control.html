@@ -69,10 +69,14 @@
                         <div class="camera-item">
                             {{ row.id }}:
                             <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ row.path_to_cam }}</a>
+                            <a href="#" onclick="reinitializeCamera('{{ row.id }}')">
+                                <img src="{{ url_for('static', filename='image/update.png') }}" alt="Переинициализировать" title="Переинициализировать">
+                                 </a> &nbsp;&nbsp;&nbsp;
                             <a href="#" onclick="openEditPanel('{{ row.id }}', '{{ row.path_to_cam }}', '{{ url_for('edit_cam', ssid=row.id) }}')">
-                                <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать"></a>
+                                <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать" title="Редактировать маршрут"></a>&nbsp;&nbsp;&nbsp;
                             <a href="{{ url_for('delete_camera', ssid=row.id) }}">
-                                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить"></a>
+                                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить" title="Удалить"></a>
+
                         </div>
                     {% endfor %}
                 </div>
@@ -101,7 +105,7 @@
 </div>
 
 <script>
-    function openEditPanel(id, path, endpoint) {
+    async function openEditPanel(id, path, endpoint) {
         const panel = document.getElementById('editPanel');
         const form = document.getElementById('editForm');
         const idInput = document.getElementById('cameraId');
@@ -140,4 +144,25 @@
             alert('Произошла ошибка при отправке данных.');
         }
     });
+</script>
+
+<script>
+    async function reinitializeCamera(camId) {
+    try {
+        const response = await fetch(`/reinitialize/${camId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        const result = await response.json();
+        if (result.success) {
+            alert(`Камера ${camId} успешно переинициализирована`);
+        } else {
+            alert(`Ошибка переинициализации камеры ${camId}: ${result.error}`);
+        }
+    } catch (error) {
+        alert(`Ошибка при отправке запроса: ${error.message}`);
+    }
+}
 </script>
