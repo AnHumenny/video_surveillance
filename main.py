@@ -40,7 +40,7 @@ async def shutdown_camera_manager():
 
 
 async def generate_frames(cap, cam_id):
-    """Генератор для потоковой передачи кадров"""
+    """frame streaming generator"""
     while True:
         try:
             ret, frame = cap.read()
@@ -69,17 +69,17 @@ async def generate_frames(cap, cam_id):
 
 
 def generate_token(username, status):
-    """генерация токена"""
+    """generation token"""
     payload = {
         'user': username,
         'status': status,
-        'exp': datetime.now(timezone.UTC) + timedelta(hours=1)
+        'exp': datetime.now(datetime.UTC) + timedelta(hours=1)
     }
     return jwt.encode(payload, os.getenv("SECRET_KEY"), algorithm='HS256')
 
 
 def verify_token(token):
-    """верификация токена"""
+    """verification token"""
     if not token:
         return False, None
     try:
@@ -91,12 +91,12 @@ def verify_token(token):
 
 
 def hash_password(password: str) -> str:
-    """Хеширование пароля."""
+    """hashing password."""
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def token_required(f):
-    """проверка валидности токена(admin(панель управления))"""
+    """checking the token by validation (admin(control panel))"""
     @wraps(f)
     async def decorated(*args, **kwargs):
         token = request.cookies.get('token')
@@ -115,7 +115,7 @@ def token_required(f):
 
 
 def token_required_camera(f):
-    """проверка валидности токена(admin, user(камеры))"""
+    """checking the token by validation (admin, user(cameras))"""
     @wraps(f)
     async def decorated(*args, **kwargs):
         token = request.cookies.get('token')
@@ -136,25 +136,41 @@ def token_required_camera(f):
 @app.route('/video/<cam_id>')
 @token_required_camera
 async def video_feed(cam_id):
-    """Маршрут для видеопотока с выбранной камеры."""
+    """Stream video feed with motion detection for the specified camera."""
     if camera_manager is None:
         return "CameraManager не инициализирован", 500
+
+    async def stream():
+        try:
+            while True:
+                frame = await camera_manager.get_frame_with_motion_detection(cam_id)
+                if frame is None:
+                    print(f"Не удалось получить кадр для камеры {cam_id}")
+                    break
+
+                ret, buffer = cv2.imencode('.jpg', frame)
+                if not ret:
+                    print(f"Ошибка кодирования кадра для камеры {cam_id}")
+                    continue
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+                await asyncio.sleep(0.033)  # ~30 FPS
+
+        except Exception as e:
+            print(f"Ошибка стриминга для камеры {cam_id}: {e}")
+
     cap = await camera_manager.get_camera(cam_id)
     if not cap:
         return "Камера не найдена или недоступна", 404
-    async def stream():
-        try:
-            async for frame in generate_frames(cap, cam_id):
-                yield frame
-        except Exception as e:
-            print(f"Ошибка стриминга для камеры {cam_id}: {e}")
-    return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+    return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/control')
 @token_required
 async def control():
-    """Панель управления."""
+    """control panel."""
     all_cameras = await Repo.select_all_cam()
     all_users = await Repo.select_all_users()
     user_host = os.getenv("HOST")
@@ -164,7 +180,7 @@ async def control():
                                  host=user_host, port=user_port, messages=messages, status='admin')
 
 async def list_all_cameras():
-    """Список всех камер."""
+    """list of all cameras."""
     q = await Repo.select_all_cam()
     if not q:
         return {"message": "Камер не найдено!"}
@@ -173,7 +189,7 @@ async def list_all_cameras():
 
 @app.route('/delete_camera/<int:ssid>', methods=['GET', 'POST'])
 async def delete_camera(ssid):
-    """Удаление камеры по id"""
+    """deleting camera by id"""
     success = await Repo.drop_camera(ssid)
     if success:
         return redirect(url_for('control'))
@@ -182,7 +198,7 @@ async def delete_camera(ssid):
 
 @app.route('/delete_user/<int:ssid>', methods=['GET'])
 async def delete_user(ssid):
-    """Удаление пользователя по id."""
+    """deleting a user by id."""
     if ssid == 1:
         await flash("Суперадмин не удаляется", "admin_not_deleted")
         return redirect(url_for('control'))
@@ -194,7 +210,7 @@ async def delete_user(ssid):
 
 
 async def check_rtsp(path_to_cam):
-    """Проверка на rtsp."""
+    """checking camera on rtsp."""
     q = path_to_cam[0:4]
     if q != "rtsp":
         return False
@@ -203,7 +219,7 @@ async def check_rtsp(path_to_cam):
 
 @app.route('/add_camera', methods=['POST', 'GET'])
 async def add_new_camera():
-    """Добавить новую камеру."""
+    """add new camera."""
     form_data = await request.form
     new_cam = form_data.get("new_cam")
     if not new_cam:
@@ -223,7 +239,7 @@ async def add_new_camera():
 
 
 async def select_all_users():
-    """Список всех пользователей"""
+    """list of all users"""
     q = Repo.select_all_users()
     return q
 
@@ -232,7 +248,7 @@ PASSWORD_PATTERN = r"^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=\S+$)
 
 @app.route('/add_user', methods=['POST', 'GET'])
 async def add_new_user():
-    """Добавить нового пользователя."""
+    """adding the new user."""
     form_data = await request.form
     user = form_data.get("new_user")
     password = form_data.get("new_password")
@@ -251,7 +267,7 @@ async def add_new_user():
 
 @app.route('/edit_cam', methods=['POST', 'GET'])
 async def edit_cam():
-    """Редактировать маршрут камеры."""
+    """editing the path to camera."""
     form_data = await request.form
     ssid = form_data.get("cameraId")
     path_to_cam = form_data.get("cameraPath")
@@ -266,18 +282,14 @@ async def edit_cam():
 
 @app.route('/logout')
 async def logout():
-    """Выход"""
+    """exit"""
     session.pop('token', None)
     return redirect(url_for('login'))
 
 
-async def motion():
-    pass
-
-
 @app.route('/', methods=['GET'])
 async def index():
-    """Главная страница с выбором камер."""
+    """main page with camera selection."""
     token = request.cookies.get('token')
     if token:
         try:
@@ -301,7 +313,7 @@ async def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 async def login():
-    """Авторизация."""
+    """Authorization."""
     if request.method == 'GET':
         return await render_template('login.html')
 
@@ -319,7 +331,7 @@ async def login():
             {
                 'username': username,
                 'status': status,
-                'exp': datetime.utcnow() + timedelta(hours=1)
+                'exp': datetime.now(timezone.utc) + timedelta(hours=1)
             },
             app.config['SECRET_KEY'],
             algorithm='HS256'
@@ -338,6 +350,7 @@ async def login():
 
 @app.route('/reload-cameras', methods=['GET', 'POST'])
 async def reload_cameras():
+    """reload all cameras"""
     global camera_manager
     try:
         if camera_manager:
@@ -367,6 +380,18 @@ async def reload_cameras():
             status=500
         )
 
+@app.route('/reinitialize/<cam_id>', methods=['POST'])
+async def reinitialize_camera(cam_id):
+    """Forced camera reinitialization"""
+    try:
+        success = await camera_manager.reinitialize_camera(cam_id)
+        if success:
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": f"Не удалось переинициализировать камеру {cam_id}"}), 500
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 async def cleanup():
     """Очистка ресурсов при завершении"""
@@ -374,7 +399,7 @@ async def cleanup():
 
 
 async def main():
-    """Основная функция для запуска приложения"""
+    """The main function to launch the application"""
     try:
         await app.run_task(host=os.getenv("HOST"), port=int(os.getenv("PORT")))
     except asyncio.CancelledError:
@@ -383,7 +408,7 @@ async def main():
 
 if __name__ == '__main__':
     def handle_shutdown(sig, frame):
-        """Обработчик сигналов для завершения"""
+        """Signal handler for completion"""
         asyncio.create_task(cleanup())
         sys.exit(0)
 
