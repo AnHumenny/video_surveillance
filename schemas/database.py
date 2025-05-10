@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Boolean
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -18,6 +18,7 @@ class DCamera(Model):
         """
     __tablename__ = "_camera"
     path_to_cam = Column(String(200), unique=True)
+    status_cam = Column(Boolean, nullable=False)
 
 
 class DUser(Model):
