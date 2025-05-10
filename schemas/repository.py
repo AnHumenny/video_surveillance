@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from sqlalchemy import select, insert, delete, and_, update
+from sqlalchemy import select, insert, delete, and_, update, Select
 from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from schemas.database import DCamera, DUser
@@ -79,13 +79,14 @@ class Repo:
             return result.scalars().all()
 
     @classmethod
-    async def edit_camera(cls, ssid, path_to_cam):
+    async def edit_camera(cls, ssid, path_to_cam, motion_detection):
         """Edit path to camera.
 
             Args:
                 cls: Class reference (unused).
                 ssid: int
                 path_to_cam: str
+                motion_detection: bool
 
             Returns:
                 200 if ok
@@ -95,13 +96,13 @@ class Repo:
             ssid = int(ssid)
             try:
                 q = update(DCamera).where(DCamera.id == int(ssid)    # type: ignore
-                                          ).values(path_to_cam=path_to_cam)
+                                          ).values(path_to_cam=path_to_cam, status_cam=motion_detection)
                 await session.execute(q)
                 await session.commit()
-                return f"Камера {ssid} успешно добавлена!"
+                return f"Камера {ssid} успешно обновлена!"
             except IntegrityError as e:
                 await session.rollback()
-                print(f"Ошибка: Камера с адресом {ssid} уже существует", e)
+                print(f"Ошибка: Камера с адресом {ssid} не обновилась", e)
                 return False
 
             except Exception as e:
@@ -131,6 +132,19 @@ class Repo:
                 raise e
 
     @classmethod
+    async def select_bool_cam(cls, ssid):
+        """Select status_cam from status_cam, returning 1 or 0."""
+        async with new_session() as session:
+            try:
+                q = Select(DCamera.status_cam).where(DCamera.id == ssid)   # type: ignore
+                result = await session.execute(q)
+                answer = result.scalar()
+                return answer
+            except IntegrityError as e:
+                return e
+
+
+    @classmethod
     async def select_all_users(cls):
         """Select all users from database, returning id, user, status fields.
 
@@ -155,7 +169,7 @@ class Repo:
 
 
     @classmethod
-    async def add_new_cam(cls, new_cam):
+    async def add_new_cam(cls, new_cam, motion_detection):
         """Inserts a new camera into the DCamera table.
 
             Args:
@@ -164,12 +178,13 @@ class Repo:
 
             Raises:
                 Exception: If insertion fails, with rollback performed.
+                :param path to new_cam:
+                :param motion_detection: False or True (motion detection)
             """
-        print("Добавляем новую камеру", new_cam)
         async with new_session() as session:
             async with session.begin():
                 try:
-                    q = insert(DCamera).values(path_to_cam=new_cam)
+                    q = insert(DCamera).values(path_to_cam=new_cam, status_cam=motion_detection)
                     await session.execute(q)
                     await session.commit()
                     return f"Камера {new_cam} успешно добавлена!"

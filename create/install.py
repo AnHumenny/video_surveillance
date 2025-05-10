@@ -34,7 +34,8 @@ def create_db():
             conn.execute(f'''
                 CREATE TABLE IF NOT EXISTS {camera_table}(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    path_to_cam VARCHAR(20) UNIQUE
+                    path_to_cam VARCHAR(100) UNIQUE,
+                    status_cam BOOL
                 );
             ''')
             print(f'Таблица {camera_table} успешно создана!')

@@ -141,9 +141,10 @@ async def video_feed(cam_id):
         return "CameraManager не инициализирован", 500
 
     async def stream():
+        status_cam = await Repo.select_bool_cam(cam_id)
         try:
             while True:
-                frame = await camera_manager.get_frame_with_motion_detection(cam_id)
+                frame = await camera_manager.get_frame_with_motion_detection(cam_id, status_cam)
                 if frame is None:
                     print(f"Не удалось получить кадр для камеры {cam_id}")
                     break
@@ -222,6 +223,7 @@ async def add_new_camera():
     """add new camera."""
     form_data = await request.form
     new_cam = form_data.get("new_cam")
+    motion_detection = 1 if form_data.get("motion_detection") else 0
     if not new_cam:
         await flash("URL камеры не указан!", "error")
         return redirect(url_for("control"))
@@ -229,7 +231,7 @@ async def add_new_camera():
     if query is False:
         await flash("Ошибка: Некорректный RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    q = await Repo.add_new_cam(new_cam)
+    q = await Repo.add_new_cam(new_cam, int(motion_detection))
     if q is False:
         await flash("Камера не добавлена: такой URL уже существует или произошла ошибка!",
                     "camera_error")
@@ -271,11 +273,12 @@ async def edit_cam():
     form_data = await request.form
     ssid = form_data.get("cameraId")
     path_to_cam = form_data.get("cameraPath")
+    motion_detection = 1 if form_data.get("motion_detect") else 0
     query = await check_rtsp(path_to_cam)
     if query is False:
         await flash("Ошибка: Некорректный RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    await Repo.edit_camera(ssid, path_to_cam)
+    await Repo.edit_camera(ssid, path_to_cam, motion_detection)
     await flash("Пользователь успешно добавлен!", "user_success")
     return redirect(url_for("control"))
 
@@ -394,7 +397,7 @@ async def reinitialize_camera(cam_id):
 
 
 async def cleanup():
-    """Очистка ресурсов при завершении"""
+    """Clearing resources on completion"""
     await camera_manager.cleanup()
 
 

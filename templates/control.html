@@ -22,9 +22,11 @@
             <div class="left-column">
                 <div class="add-camera">
                     <h5>Добавить камеру</h5>
-                    <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data">
+                    <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
                         <label for="new_cam">Маршрут:</label>
                         <input type="text" name="new_cam" id="new_cam" required>
+                        <label for="motion_detection">Детекция движения:</label>
+                        <input type="checkbox" name="motion_detection" id="motion_detection" value="1">
                         <input type="submit" value="Добавить">
                     </form>
                     {% if get_flashed_messages(with_categories=True) %}
@@ -68,6 +70,8 @@
                     {% for row in all_cameras %}
                         <div class="camera-item">
                             {{ row.id }}:
+                            {% if row.status_cam == False %} Disable {% endif %}
+                            {% if row.status_cam == True %} Enable {% endif %}
                             <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ row.path_to_cam }}</a>
                             <a href="#" onclick="reinitializeCamera('{{ row.id }}')">
                                 <img src="{{ url_for('static', filename='image/update.png') }}" alt="Переинициализировать" title="Переинициализировать">
@@ -91,6 +95,8 @@
                     <input type="text" id="cameraId" name="cameraId" readonly>
                     <label for="cameraPath">Маршрут камеры:</label>
                     <input type="text" id="cameraPath" name="cameraPath" required>
+                    <label for="motion_detection">Детекция движения:</label>
+                    <input type="checkbox" name="motion_detect" id="motion_detect" value="1">
                     <div style="text-align: right; margin-top: 10px;">
                         <button type="button" class="btn-cancel" onclick="closeEditPanel()">Отмена</button>
                         <button type="submit" class="btn-save">Сохранить</button>

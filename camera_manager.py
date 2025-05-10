@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from schemas.repository import Repo
+import time
 
 
 class CameraManager:
@@ -125,10 +126,8 @@ class CameraManager:
         self.background_subtractors[cam_id] = cv2.createBackgroundSubtractorMOG2()
         return True
 
-
-    async def get_frame_with_motion_detection(self, cam_id):
+    async def get_frame_with_motion_detection(self, cam_id, status_cam):
         """Retrieve a frame from the camera with motion detection and bounding boxes.
-
         Apply background subtraction to detect moving objects and draw bounding boxes around them.
         Return the processed frame or None if the camera is unavailable or an error occurs.
         """
@@ -137,43 +136,45 @@ class CameraManager:
             return None
 
         loop = asyncio.get_running_loop()
-        try:
-            def read_frame():
-                ret, frame = cap.read()
-                if not ret:
-                    return None
-                return frame
 
-            frame = await loop.run_in_executor(self.executor, read_frame)
-            if frame is None:
-                print(f"Не удалось прочитать кадр с камеры {cam_id}.")
+        def read_frame():
+            ret, frame = cap.read()
+            if not ret:
                 return None
+            return frame
 
-            def process_motion_detection(frm, subtractor):
-                fg_mask = subtractor.apply(frm)
-                kernel = np.ones((5, 5), np.uint8)
-                fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
-                fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
+        frame = await loop.run_in_executor(self.executor, read_frame)
+        if frame is None:
+            print(f"Не удалось прочитать кадр с камеры {cam_id}.")
+            return None
 
-                contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not status_cam:
+            return frame
 
-                processed_frame = frm.copy()
-                for contour in contours:
-                    if cv2.contourArea(contour) < 500:
-                        continue
-                    x, y, w, h = cv2.boundingRect(contour)
-                    cv2.rectangle(processed_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        def process_motion_detection(frm, subtractor):
+            fg_mask = subtractor.apply(frm)
+            kernel = np.ones((5, 5), np.uint8)
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
+            fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
+            contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-                return processed_frame
+            processed_frame = frm.copy()
+            for contour in contours:
+                if cv2.contourArea(contour) < 500:
+                    continue
+                x, y, w, h = cv2.boundingRect(contour)
+                cv2.rectangle(processed_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-            processed_frame = await loop.run_in_executor(
-                self.executor, process_motion_detection, frame, self.background_subtractors[cam_id]
-            )
             return processed_frame
 
-        except Exception as e:
-            print(f"Ошибка обработки кадра для камеры {cam_id}: {e}")
-            return None
+        processed_frame = await loop.run_in_executor(
+            self.executor, process_motion_detection, frame, self.background_subtractors[cam_id]
+        )
+
+        # elapsed = time.perf_counter() - start_time
+        # print(f"[{cam_id}] Frame с детекцией: {elapsed:.4f} сек")
+
+        return processed_frame
 
     async def cleanup(self):
         """Release camera resources asynchronously."""
