@@ -21,7 +21,17 @@
         <div class="content">
             <div class="left-column">
                 <div class="add-camera">
+                    <h5>Указать диапазон поиска</h5>
+                    <h6><i>Актуальный диапазон поиска {{ current_range }}</i></h6>
+                    <form method="post" action="{{ url_for('update_route') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
+                        <input type="text" name="cam_host" id="cam_host" required>
+                        <input type="text" name="subnet_mask" required>
+                        <input type="submit" value="Добавить">
+                    </form>
+                </div>
+                <div class="add-camera">
                     <h5>Добавить камеру</h5>
+                    <p><i>Example: rtsp://user:password@192.168.1.4:554/h265</i></p>
                     <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
                         <label for="new_cam">Маршрут:</label>
                         <input type="text" name="new_cam" id="new_cam" required>
@@ -66,6 +76,38 @@
             </div>
             <div class="right-column">
                 <div class="camera-list">
+                    <button onclick="scanRTSP()">Сканировать сеть</button>
+                        <ul id="rtsp-list"></ul>
+                            <script>
+                                async function scanRTSP() {
+                                    try {
+                                        const response = await fetch('/scan_network_for_rtsp', {
+                                            headers: {
+                                                'Authorization': 'Bearer ' + localStorage.getItem('token')
+                                            }
+                                        });
+                                    if (!response.ok) {
+                                        throw new Error(`Ошибка: ${response.statusText}`);
+                                    }
+                                    const devices = await response.json();
+                                    const listElement = document.getElementById('rtsp-list');
+                                    listElement.innerHTML = '';
+                                    if (devices.length === 0) {
+                                        listElement.innerHTML = '<li>Ничего не найдено</li>';
+                                    } else {
+                                    devices.forEach(device => {
+                                        const item = document.createElement('li');
+                                        item.textContent = `IP: ${device.ip}, Порт: ${device.port}`;
+                                        listElement.appendChild(item);
+                                    });
+                                }
+                                } catch (err) {
+                                alert('Ошибка при сканировании: ' + err.message);
+                                }
+                            }
+                        </script>
+                    <br>
+                    =================================
                     <h5>Список камер || <a href="#" onclick="reloadCameras()">Переинициализировать камеры</a></h5>
                     {% for row in all_cameras %}
                         <div class="camera-item">

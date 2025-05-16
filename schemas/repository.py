@@ -3,8 +3,9 @@ import json
 from sqlalchemy import select, insert, delete, and_, update, Select
 from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from schemas.database import DCamera, DUser
+from schemas.database import DCamera, DUser, DFindCamera
 import os
+import re
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -77,6 +78,95 @@ class Repo:
             q = select(DCamera)
             result = await session.execute(q)
             return result.scalars().all()
+
+    @classmethod
+    async def select_ip_cameras(cls):
+        """Select field ip from cameras.
+
+            Args:
+                cls: Class reference (unused).
+
+            Returns:
+                list of value: str (a.e. 192.168.0.1)
+
+            Raises:
+                SQLAlchemyError: If query execution fails.
+                Exception: For unexpected errors.
+            """
+        try:
+            async with new_session() as session:
+                q = select(DCamera.path_to_cam)
+                result = await session.execute(q)
+                paths = result.scalars().all()
+
+                ip_addresses = set()
+                for path in paths:
+                    if path:
+                        match = re.search(r'@([^/]+/[^/]+)', path)
+                        if match:
+                            ip_addresses.add(match.group(1).split('/')[0])
+                        else:
+                            ip_addresses.add(None)
+                    else:
+                        ip_addresses.add(None)
+                return ip_addresses
+
+        except SQLAlchemyError as e:
+            raise SQLAlchemyError(f"Database query failed: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Unexpected error: {str(e)}")
+
+    @classmethod
+    async def select_find_cam(cls):
+        """Select from _find_camera.
+
+            Args:
+                cls: Class reference (unused).
+
+            Returns:
+                answer: str
+
+            Raises:
+                SQLAlchemyError: If query execution fails.
+                Exception: For unexpected errors.
+            """
+        async with new_session() as session:
+            q = select(DFindCamera.cam_host, DFindCamera.subnet_mask)
+            result = await session.execute(q)
+            answer = ','.join(f"{row.cam_host}/{row.subnet_mask}" for row in result)
+            return answer if answer else None
+
+    @classmethod
+    async def update_find_camera(cls, cam_host, subnet_mask):
+        """Edit find_to_camera.
+
+            Args:
+                cls: Class reference (unused).
+                cam_host: str
+                subnet_mask: bool
+
+            Returns:
+                200 if ok
+
+            """
+        async with (new_session() as session):
+            try:
+                q = update(DFindCamera).where(DFindCamera.id == 1  # type: ignore
+                                          ).values(cam_host=cam_host, subnet_mask=subnet_mask)
+                await session.execute(q)
+                await session.commit()
+                return f"Роут {cam_host} успешно обновлен!"
+            except IntegrityError as e:
+                await session.rollback()
+                print(f"Ошибка: Роут с адресом {cam_host} не обновился", e)
+                return False
+
+            except Exception as e:
+                await session.rollback()
+                print(f"Ошибка: {e}")
+                return e
+
+
 
     @classmethod
     async def edit_camera(cls, ssid, path_to_cam, motion_detection):
@@ -332,4 +422,3 @@ class Repo:
                     return True
                 except ValueError as e:
                     return e
-
