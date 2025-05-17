@@ -20,6 +20,7 @@ def create_db():
 
             user_table = "_user"
             camera_table = "_camera"
+            find_cam = "_find_camera"
 
             conn.execute(f'''
                 CREATE TABLE IF NOT EXISTS {user_table}(
@@ -40,6 +41,15 @@ def create_db():
             ''')
             print(f'Таблица {camera_table} успешно создана!')
 
+            conn.execute(f'''
+                            CREATE TABLE IF NOT EXISTS {find_cam}(
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                cam_host VARCHAR(100),
+                                subnet_mask VARCHAR(10)
+                            );
+                        ''')
+            print(f'Таблица {camera_table} успешно создана!')
+
             conn.commit()
         except sqlite3.Error as e:
             print(f'Ошибка при создании базы данных или таблиц: {e}')
@@ -50,6 +60,7 @@ def create_db():
 
 password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()
 user_info = [os.getenv("ADMIN"), f"{password}", "admin"]
+find_cam_info = [os.getenv("CAM_HOST"), os.getenv("SUBNET_MASK")]
 
 def insert_into_user():
     """Добавляем первичного пользователя(данные берём из .env)"""
@@ -66,6 +77,23 @@ def insert_into_user():
     finally:
         conn.close()
 
+def insert_into_find_cam():
+    """Добавляем первичные данные маршрута к камере (данные берём из .env)"""
+    user_table = "_find_camera"
+    db_path = os.path.join('..', f'{name_db}.db')
+    try:
+        conn = sqlite3.connect(db_path)
+        sql = f'''INSERT INTO {user_table} (cam_host, subnet_mask) VALUES (?, ?)'''
+        conn.execute(sql, find_cam_info)
+        conn.commit()
+        print(f'Маршрут {find_cam_info} добавлен!')
+    except sqlite3.Error as e:
+        print(f'Ошибка при добавлении пользователя: {e}')
+    finally:
+        conn.close()
+
 create_db()
 time.sleep(1)
 insert_into_user()
+time.sleep(1)
+insert_into_find_cam()

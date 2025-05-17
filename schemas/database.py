@@ -8,7 +8,7 @@ class Model(DeclarativeBase):
 
 
 class DCamera(Model):
-    """Represents a book in the database.
+    """Represents a camera in the database.
 
         Attributes:
             path_to_cam (str): path to camera ().
@@ -36,3 +36,18 @@ class DUser(Model):
     user = Column(String(50), unique=True)
     password = Column(String(100))
     status = Column(String(10))
+
+
+class DFindCamera(Model):
+    """Represents a rout for finding camera.
+
+    Attributes:
+            cam_host (str): Path for find (a.e. 192.168.0.1).
+            subnet_mask (str): subnet mask (a.e. 24).
+
+    Table:
+        _find_camera: The database table name.
+    """
+    __tablename__ = "_find_camera"
+    cam_host = Column(String(200))
+    subnet_mask = Column(String(10))

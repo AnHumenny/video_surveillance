@@ -4,14 +4,12 @@ import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from schemas.repository import Repo
-import time
 
 
 class CameraManager:
     def __init__(self):
         """Initialize the CameraManager with synchronous configuration loading."""
         camera_config_json = Repo.select_all_cameras_to_json()
-        print(f"camera_config_json: {camera_config_json}")
         if not camera_config_json:
             raise ValueError("Конфигурация камер не найдена в базе данных")
 
@@ -170,10 +168,6 @@ class CameraManager:
         processed_frame = await loop.run_in_executor(
             self.executor, process_motion_detection, frame, self.background_subtractors[cam_id]
         )
-
-        # elapsed = time.perf_counter() - start_time
-        # print(f"[{cam_id}] Frame с детекцией: {elapsed:.4f} сек")
-
         return processed_frame
 
     async def cleanup(self):

@@ -1,11 +1,14 @@
+import os
+from hypercorn.config import Config
+from hypercorn.asyncio import serve
 import hashlib
 import json
 import re
 import cv2
-import os
+import nmap
 import asyncio
-from quart import Quart, request, jsonify, render_template, make_response, Response, redirect, url_for, session, flash, \
-    get_flashed_messages
+from quart import (Quart, request, jsonify, render_template, make_response, Response, redirect, url_for, session, flash,
+    get_flashed_messages)
 import signal
 import sys
 from functools import wraps
@@ -51,7 +54,7 @@ async def generate_frames(cap, cam_id):
             if size_video:
                 width, height = map(int, size_video.split(","))
             else:
-                width, height = 1280, 720
+                width, height = 640, 480
             frame = cv2.resize(frame, (width, height))
             ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             if not ret:
@@ -168,17 +171,62 @@ async def video_feed(cam_id):
 
     return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+
+@app.route('/update_route', methods=['GET', 'POST'])
+@token_required
+async def update_route():
+    form_data = await request.form
+    cam_host = form_data.get("cam_host")
+    subnet_mask = form_data.get("subnet_mask")
+    await Repo.update_find_camera(cam_host, subnet_mask)
+    return redirect(url_for('control'))
+
+
+@app.route('/scan_network_for_rtsp')
+@token_required
+async def scan_network_for_rtsp():
+    """Scan the local network to find devices with open RTSP port."""
+    network_range = await Repo.select_find_cam()
+    rtsp_not_found = [f"В указанном диапазоне {network_range} камер не обнаружено!"]
+    if not network_range:
+        return jsonify(rtsp_not_found)
+    list_rtsp = await Repo.select_ip_cameras()
+    try:
+        nm = nmap.PortScanner()
+        nm.scan(hosts=network_range, arguments='-p 554,8554 --open')
+    except Exception as e:
+        return jsonify({'error': f'Nmap scan failed: {str(e)}'}), 500
+    rtsp_devices = []
+    for host in nm.all_hosts():
+        for port in [554, 8554]:
+            if (
+                'tcp' in nm[host]
+                and port in nm[host]['tcp']
+                and nm[host]['tcp'][port]['state'] == 'open'
+            ):
+                check_url = f"{host}:{port}"
+                if check_url not in list_rtsp:
+                    rtsp_devices.append({
+                        'ip': host,
+                        'port': port,
+                    })
+                    print(f"[DEBUG] Found potential RTSP device at {host}:{port}")
+    return jsonify(rtsp_devices)
+
+
 @app.route('/control')
 @token_required
 async def control():
     """control panel."""
     all_cameras = await Repo.select_all_cam()
     all_users = await Repo.select_all_users()
+    current_range = await Repo.select_find_cam()
     user_host = os.getenv("HOST")
     user_port = os.getenv("PORT")
     messages = get_flashed_messages(with_categories=True)
     return await render_template('control.html', all_cameras=all_cameras, all_users=all_users,
-                                 host=user_host, port=user_port, messages=messages, status='admin')
+                                 host=user_host, port=user_port, messages=messages, status='admin',
+                                 current_range=current_range)
 
 async def list_all_cameras():
     """list of all cameras."""
@@ -325,10 +373,9 @@ async def login():
     password = form_data.get('password')
     hashed_password = hash_password(password)
     user = await Repo.auth_user(username, hashed_password)
+
     if user:
         status = user.status  # type: ignore
-        if user is None:
-            return jsonify({"message": "Статус пользователя не определен"}), 401
 
         token = jwt.encode(
             {
@@ -339,15 +386,24 @@ async def login():
             app.config['SECRET_KEY'],
             algorithm='HS256'
         )
-        response = await render_template(
+
+        rendered = await render_template(
             "index.html",
             camera_configs=camera_manager.camera_configs,
             username=username,
             status=status
         )
-        response = await make_response(response)
-        response.set_cookie('token', token, httponly=True, secure=True)
+
+        response = await make_response(rendered)
+        response.set_cookie(
+            'token',
+            token,
+            httponly=True,
+            secure=False,
+            samesite="Lax"
+        )
         return response
+
     return jsonify({"message": "Ошибка доступа"}), 401
 
 
@@ -401,13 +457,17 @@ async def cleanup():
     await camera_manager.cleanup()
 
 
-async def main():
+async def main(host: str, port: int, debug: bool = False):
     """The main function to launch the application"""
-    try:
-        await app.run_task(host=os.getenv("HOST"), port=int(os.getenv("PORT")))
-    except asyncio.CancelledError:
-        await cleanup()
+    config = Config()
+    config.bind = [f"{host}:{port}"]
+    config.debug = debug
 
+    try:
+        await serve(app, config)
+    except asyncio.CancelledError:
+        print("Server interrupted, shutting down...")
+        await cleanup()
 
 if __name__ == '__main__':
     def handle_shutdown(sig, frame):
@@ -418,4 +478,4 @@ if __name__ == '__main__':
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, handle_shutdown)
 
-    asyncio.run(main())
+    asyncio.run(main(host=os.getenv('HOST'), port=int(os.getenv("PORT"))))
