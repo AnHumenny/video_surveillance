@@ -31,12 +31,15 @@
                 </div>
                 <div class="add-camera">
                     <h5>Добавить камеру</h5>
-                    <p><i>Example: rtsp://user:password@192.168.1.4:554/h265</i></p>
+                    <p><i>Example: rtsp://user:password@192.168.1.4:554/h265</i><br>
+                       <i>Example: rtsp://user:password@192.168.1.4:554/live/ch00_1</i></p>
                     <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
                         <label for="new_cam">Маршрут:</label>
                         <input type="text" name="new_cam" id="new_cam" required>
                         <label for="motion_detection">Детекция движения:</label>
                         <input type="checkbox" name="motion_detection" id="motion_detection" value="1">
+                        <label for="visible_cam">Видимость камеры:</label>
+                        <input type="checkbox" name="visible_cam" id="visible_cam" value="1">
                         <input type="submit" value="Добавить">
                     </form>
                     {% if get_flashed_messages(with_categories=True) %}
@@ -111,15 +114,22 @@
                     <h5>Список камер || <a href="#" onclick="reloadCameras()">Переинициализировать камеры</a></h5>
                     {% for row in all_cameras %}
                         <div class="camera-item">
-                            {{ row.id }}:
-                            {% if row.status_cam == False %} Disable {% endif %}
-                            {% if row.status_cam == True %} Enable {% endif %}
-                            <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ row.path_to_cam }}</a>
+                            {% if not row.visible_cam %}
+                            <img src="{{ url_for('static', filename='image/red.png') }}" title="Камера отключена">
+                            {% else %}
+                            <img src="{{ url_for('static', filename='image/green.png') }}" title="Камера включена">
+                            {% endif %} &nbsp;&nbsp;
+                            {% if not row.status_cam %}
+                            <img src="{{ url_for('static', filename='image/red.png') }}" title="Детекция движения отключена">
+                            {% else %}
+                            <img src="{{ url_for('static', filename='image/green.png') }}" title="Детекция движения включена">
+                            {% endif %}
+                            <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ masked_urls[row.id] }}</a>
                             <a href="#" onclick="reinitializeCamera('{{ row.id }}')">
                                 <img src="{{ url_for('static', filename='image/update.png') }}" alt="Переинициализировать" title="Переинициализировать">
-                                 </a> &nbsp;&nbsp;&nbsp;
+                                 </a> &nbsp;
                             <a href="#" onclick="openEditPanel('{{ row.id }}', '{{ row.path_to_cam }}', '{{ url_for('edit_cam', ssid=row.id) }}')">
-                                <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать" title="Редактировать маршрут"></a>&nbsp;&nbsp;&nbsp;
+                                <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать" title="Редактировать маршрут"></a> &nbsp;
                             <a href="{{ url_for('delete_camera', ssid=row.id) }}">
                                 <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить" title="Удалить"></a>
 
@@ -139,6 +149,8 @@
                     <input type="text" id="cameraPath" name="cameraPath" required>
                     <label for="motion_detection">Детекция движения:</label>
                     <input type="checkbox" name="motion_detect" id="motion_detect" value="1">
+                    <label for="motion_detection">Видимость камеры:</label>
+                    <input type="checkbox" name="visible_camera" id="visible_camera" value="0">
                     <div style="text-align: right; margin-top: 10px;">
                         <button type="button" class="btn-cancel" onclick="closeEditPanel()">Отмена</button>
                         <button type="submit" class="btn-save">Сохранить</button>

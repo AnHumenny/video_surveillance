@@ -33,6 +33,8 @@ camera_manager = CameraManager()
 async def setup_camera_manager():
     global camera_manager
     camera_manager = CameraManager()
+    if not CameraManager():
+        return
     await camera_manager.initialize()
 
 @app.after_serving
@@ -48,17 +50,17 @@ async def generate_frames(cap, cam_id):
         try:
             ret, frame = cap.read()
             if not ret or frame is None:
-                print(f"Кадр отброшен для камеры {cam_id}")
+                print(f"The frame is discarded for the camera {cam_id}")
                 break
             size_video = os.getenv("SIZE_VIDEO")
             if size_video:
                 width, height = map(int, size_video.split(","))
             else:
-                width, height = 640, 480
+                width, height = 1280, 720
             frame = cv2.resize(frame, (width, height))
             ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             if not ret:
-                print(f"Ошибка кодирования кадра для камеры {cam_id}")
+                print(f"Frame encoding error for camera {cam_id}")
                 continue
 
             frame_data = buffer.tobytes()
@@ -67,7 +69,7 @@ async def generate_frames(cap, cam_id):
             await asyncio.sleep(0.03)
 
         except Exception as e:
-            print(f"Ошибка в генераторе кадров для камеры {cam_id}: {e}")
+            print(f"Frame encoding error for camera {cam_id}: {e}")
             break
 
 
@@ -123,17 +125,25 @@ def token_required_camera(f):
     async def decorated(*args, **kwargs):
         token = request.cookies.get('token')
         if not token:
-            return jsonify({"message": "Токен отсутствует"}), 401
+            return jsonify({"message": "No token"}), 401
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
             if data['status'] not in ['admin', 'user']:
-                return jsonify({"message": "Недостаточно прав"}), 403
+                return jsonify({"message": "Insufficient rights"}), 403
         except jwt.ExpiredSignatureError:
-            return jsonify({"message": "Токен истек"}), 401
+            return jsonify({"message": "Token has expired"}), 401
         except jwt.InvalidTokenError:
-            return jsonify({"message": "Неверный токен"}), 401
+            return jsonify({"message": "Invalid token"}), 401
         return await f(*args, **kwargs)
     return decorated
+
+
+async def check_rtsp(path_to_cam):
+    """checking camera on rtsp."""
+    q = path_to_cam[0:4]
+    if q != "rtsp":
+        return False
+    return True
 
 
 @app.route('/video/<cam_id>')
@@ -141,7 +151,7 @@ def token_required_camera(f):
 async def video_feed(cam_id):
     """Stream video feed with motion detection for the specified camera."""
     if camera_manager is None:
-        return "CameraManager не инициализирован", 500
+        return "CameraManager not initialization", 500
 
     async def stream():
         status_cam = await Repo.select_bool_cam(cam_id)
@@ -149,12 +159,13 @@ async def video_feed(cam_id):
             while True:
                 frame = await camera_manager.get_frame_with_motion_detection(cam_id, status_cam)
                 if frame is None:
-                    print(f"Не удалось получить кадр для камеры {cam_id}")
+                    print(f"Failed to get frame for camera {cam_id}")
                     break
 
+                frame = cv2.resize(frame, (1280, 720))      # принудительное снижение
                 ret, buffer = cv2.imencode('.jpg', frame)
                 if not ret:
-                    print(f"Ошибка кодирования кадра для камеры {cam_id}")
+                    print(f"Frame encoding error for camera {cam_id}")
                     continue
                 frame_bytes = buffer.tobytes()
                 yield (b'--frame\r\n'
@@ -163,11 +174,12 @@ async def video_feed(cam_id):
                 await asyncio.sleep(0.033)  # ~30 FPS
 
         except Exception as e:
-            print(f"Ошибка стриминга для камеры {cam_id}: {e}")
+            print(f"Streaming error for camera {cam_id}: {e}")
 
     cap = await camera_manager.get_camera(cam_id)
+
     if not cap:
-        return "Камера не найдена или недоступна", 404
+        return "Camera not found or unavailable", 404
 
     return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
@@ -187,7 +199,7 @@ async def update_route():
 async def scan_network_for_rtsp():
     """Scan the local network to find devices with open RTSP port."""
     network_range = await Repo.select_find_cam()
-    rtsp_not_found = [f"В указанном диапазоне {network_range} камер не обнаружено!"]
+    rtsp_not_found = [f"Within the specified range {network_range} no cameras found!"]
     if not network_range:
         return jsonify(rtsp_not_found)
     list_rtsp = await Repo.select_ip_cameras()
@@ -213,6 +225,8 @@ async def scan_network_for_rtsp():
                     print(f"[DEBUG] Found potential RTSP device at {host}:{port}")
     return jsonify(rtsp_devices)
 
+def mask_rtsp_credentials(url: str) -> str:
+    return re.sub(r'//(.*?):(.*?)@', r'//****:****@', url)
 
 @app.route('/control')
 @token_required
@@ -221,12 +235,13 @@ async def control():
     all_cameras = await Repo.select_all_cam()
     all_users = await Repo.select_all_users()
     current_range = await Repo.select_find_cam()
+    masked_urls = {cam.id: mask_rtsp_credentials(cam.path_to_cam) for cam in all_cameras}
     user_host = os.getenv("HOST")
     user_port = os.getenv("PORT")
     messages = get_flashed_messages(with_categories=True)
     return await render_template('control.html', all_cameras=all_cameras, all_users=all_users,
                                  host=user_host, port=user_port, messages=messages, status='admin',
-                                 current_range=current_range)
+                                 current_range=current_range, masked_urls=masked_urls )
 
 async def list_all_cameras():
     """list of all cameras."""
@@ -242,28 +257,20 @@ async def delete_camera(ssid):
     success = await Repo.drop_camera(ssid)
     if success:
         return redirect(url_for('control'))
-    return jsonify({"error": "Камера не найдена"}), 404
+    return jsonify({"error": "Camera not found"}), 404
 
 
 @app.route('/delete_user/<int:ssid>', methods=['GET'])
 async def delete_user(ssid):
     """deleting a user by id."""
     if ssid == 1:
-        await flash("Суперадмин не удаляется", "admin_not_deleted")
+        await flash("Superadmin is not deleted", "admin_not_deleted")
         return redirect(url_for('control'))
     success = await Repo.drop_user(ssid)
     if success:
-        await flash("Пользователь успешно удалён", "user_deleted")
+        await flash("User successfully deleted", "user_deleted")
         return redirect(url_for('control'))
-    return jsonify({"error": "Пользователь не найден"}), 404
-
-
-async def check_rtsp(path_to_cam):
-    """checking camera on rtsp."""
-    q = path_to_cam[0:4]
-    if q != "rtsp":
-        return False
-    return True
+    return jsonify({"error": "User not found"}), 404
 
 
 @app.route('/add_camera', methods=['POST', 'GET'])
@@ -272,19 +279,20 @@ async def add_new_camera():
     form_data = await request.form
     new_cam = form_data.get("new_cam")
     motion_detection = 1 if form_data.get("motion_detection") else 0
+    visible_cam = 1 if form_data.get("visible_cam") else 0
     if not new_cam:
-        await flash("URL камеры не указан!", "error")
+        await flash("Camera URL not specified!", "error")
         return redirect(url_for("control"))
     query = await check_rtsp(new_cam)
     if query is False:
-        await flash("Ошибка: Некорректный RTSP URL", "rtsp_error")
+        await flash("Error: Invalid RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    q = await Repo.add_new_cam(new_cam, int(motion_detection))
+    q = await Repo.add_new_cam(new_cam, int(motion_detection), int(visible_cam))
     if q is False:
-        await flash("Камера не добавлена: такой URL уже существует или произошла ошибка!",
+        await flash("Camera not added: such URL already exists or an error occurred!",
                     "camera_error")
         return redirect(url_for("control"))
-    await flash("Камера успешно добавлена!", "camera_success")
+    await flash("Camera added successfully!", "camera_success")
     return redirect(url_for("control"))
 
 
@@ -304,14 +312,14 @@ async def add_new_user():
     password = form_data.get("new_password")
     status = form_data.get("status")
     if not re.match(PASSWORD_PATTERN, password):
-        await flash("Длина пароля не соответствует!", "password_error")
+        await flash("Password structure does not match!", "password_error")
         return redirect(url_for("control"))
     pswrd = hash_password(password)
     q = await Repo.add_new_user(user, pswrd, status)
     if q is False:
-        await flash("Такой пользователь уже существует!", "user_error")
+        await flash("This user already exists!", "user_error")
         return redirect(url_for("control"))
-    await flash("Пользователь успешно добавлен!", "user_success")
+    await flash("User added successfully!", "user_success")
     return redirect(url_for("control"))
 
 
@@ -322,12 +330,13 @@ async def edit_cam():
     ssid = form_data.get("cameraId")
     path_to_cam = form_data.get("cameraPath")
     motion_detection = 1 if form_data.get("motion_detect") else 0
+    visible_camera = 1 if form_data.get("visible_camera") else 0
     query = await check_rtsp(path_to_cam)
     if query is False:
-        await flash("Ошибка: Некорректный RTSP URL", "rtsp_error")
+        await flash("Error: Incorrect RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    await Repo.edit_camera(ssid, path_to_cam, motion_detection)
-    await flash("Пользователь успешно добавлен!", "user_success")
+    await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera)
+    await flash("User added successfully!", "user_success")
     return redirect(url_for("control"))
 
 
@@ -356,9 +365,9 @@ async def index():
                 )
                 return response
         except jwt.ExpiredSignatureError:
-            print("Токен просрочен")
+            print("Token expired")
         except jwt.InvalidTokenError as e:
-            print(f"Невалидный токен: {str(e)}")
+            print(f"Invalid token: {str(e)}")
     return redirect(url_for('login'))
 
 
@@ -404,7 +413,7 @@ async def login():
         )
         return response
 
-    return jsonify({"message": "Ошибка доступа"}), 401
+    return jsonify({"message": "Access error"}), 401
 
 
 @app.route('/reload-cameras', methods=['GET', 'POST'])
@@ -434,7 +443,7 @@ async def reload_cameras():
         )
     except Exception as e:
         return Response(
-            json.dumps({"error": f"Ошибка при перезагрузке CameraManager: {str(e)}"}),
+            json.dumps({"error": f"Error during reboot CameraManager: {str(e)}"}),
             mimetype='application/json',
             status=500
         )
@@ -447,7 +456,7 @@ async def reinitialize_camera(cam_id):
         if success:
             return jsonify({"success": True})
         else:
-            return jsonify({"success": False, "error": f"Не удалось переинициализировать камеру {cam_id}"}), 500
+            return jsonify({"success": False, "error": f"Failed to reinitialize camera {cam_id}"}), 500
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -458,16 +467,20 @@ async def cleanup():
 
 
 async def main(host: str, port: int, debug: bool = False):
-    """The main function to launch the application"""
     config = Config()
     config.bind = [f"{host}:{port}"]
     config.debug = debug
-
+    success = await camera_manager.load_camera_configs()
+    if success:
+        await camera_manager.initialize()
+    else:
+        print("Cameras not initialized, app continues to launch.")
     try:
         await serve(app, config)
     except asyncio.CancelledError:
         print("Server interrupted, shutting down...")
         await cleanup()
+
 
 if __name__ == '__main__':
     def handle_shutdown(sig, frame):

@@ -169,7 +169,7 @@ class Repo:
 
 
     @classmethod
-    async def edit_camera(cls, ssid, path_to_cam, motion_detection):
+    async def edit_camera(cls, ssid, path_to_cam, motion_detection, visible_camera):
         """Edit path to camera.
 
             Args:
@@ -177,16 +177,20 @@ class Repo:
                 ssid: int
                 path_to_cam: str
                 motion_detection: bool
+                visible_camera: bool
 
             Returns:
                 200 if ok
+
 
             """
         async with (new_session() as session):
             ssid = int(ssid)
             try:
                 q = update(DCamera).where(DCamera.id == int(ssid)    # type: ignore
-                                          ).values(path_to_cam=path_to_cam, status_cam=motion_detection)
+                                          ).values(path_to_cam=path_to_cam,
+                                                   status_cam=motion_detection,
+                                                   visible_cam=visible_camera)
                 await session.execute(q)
                 await session.commit()
                 return f"Камера {ssid} успешно обновлена!"
@@ -226,7 +230,7 @@ class Repo:
         """Select status_cam from status_cam, returning 1 or 0."""
         async with new_session() as session:
             try:
-                q = Select(DCamera.status_cam).where(DCamera.id == ssid)   # type: ignore
+                q = Select(DCamera.status_cam).where(DCamera.id == ssid and DCamera.visible_cam == True)   # type: ignore
                 result = await session.execute(q)
                 answer = result.scalar()
                 return answer
@@ -259,7 +263,7 @@ class Repo:
 
 
     @classmethod
-    async def add_new_cam(cls, new_cam, motion_detection):
+    async def add_new_cam(cls, new_cam, motion_detection, visible_cam):
         """Inserts a new camera into the DCamera table.
 
             Args:
@@ -268,13 +272,16 @@ class Repo:
 
             Raises:
                 Exception: If insertion fails, with rollback performed.
-                :param path to new_cam:
+                :param visible_cam:
+                :param path to new_cam: False or True (default == True)
                 :param motion_detection: False or True (motion detection)
             """
         async with new_session() as session:
             async with session.begin():
                 try:
-                    q = insert(DCamera).values(path_to_cam=new_cam, status_cam=motion_detection)
+                    q = insert(DCamera).values(path_to_cam=new_cam,
+                                               status_cam=motion_detection,
+                                               visible_cam=visible_cam)
                     await session.execute(q)
                     await session.commit()
                     return f"Камера {new_cam} успешно добавлена!"
@@ -395,12 +402,35 @@ class Repo:
         try:
             conn = sqlite3.connect(path_to_database)
             cursor = conn.cursor()
-            q = "SELECT id, path_to_cam FROM _camera"
+            q = "SELECT id, path_to_cam, visible_cam FROM _camera WHERE visible_cam = True"
             cursor.execute(q)
             result = cursor.fetchall()
             json_result = {str(row[0]): row[1] for row in result}
             conn.close()
             return json.dumps(json_result, ensure_ascii=False)
+        except sqlite3.Error as e:
+            print(f"Ошибка базы данных: {e}")
+            return json.dumps({})
+
+    @staticmethod
+    def reinit_camera(cam_id):
+        """Синхронная выборка одной активной камеры по id, возвращает JSON."""
+        path_to_database = os.path.join(".", f"{os.getenv('DATABASE')}.db")
+        try:
+            with sqlite3.connect(path_to_database) as conn:
+                cursor = conn.cursor()
+                query = """
+                    SELECT id, path_to_cam, visible_cam
+                    FROM _camera 
+                    WHERE id = ? AND visible_cam = 1
+                """
+                cursor.execute(query, (cam_id,))
+                result = cursor.fetchone()
+                if result:
+                    return json.dumps({
+                        str(result[0]): result[1]
+                    }, ensure_ascii=False)
+                return json.dumps({})
         except sqlite3.Error as e:
             print(f"Ошибка базы данных: {e}")
             return json.dumps({})
