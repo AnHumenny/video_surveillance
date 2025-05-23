@@ -31,15 +31,17 @@ def create_db():
                 );
             ''')
             print(f'Таблица {user_table} успешно создана!')
-
+            time.sleep(1)
             conn.execute(f'''
                 CREATE TABLE IF NOT EXISTS {camera_table}(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     path_to_cam VARCHAR(100) UNIQUE,
-                    status_cam BOOL
+                    status_cam BOOL,
+                    visible_cam BOOL
                 );
             ''')
             print(f'Таблица {camera_table} успешно создана!')
+            time.sleep(1)
 
             conn.execute(f'''
                             CREATE TABLE IF NOT EXISTS {find_cam}(
@@ -49,7 +51,7 @@ def create_db():
                             );
                         ''')
             print(f'Таблица {camera_table} успешно создана!')
-
+            time.sleep(1)
             conn.commit()
         except sqlite3.Error as e:
             print(f'Ошибка при создании базы данных или таблиц: {e}')
