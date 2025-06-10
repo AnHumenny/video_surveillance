@@ -187,6 +187,7 @@ async def video_feed(cam_id):
 @app.route('/update_route', methods=['GET', 'POST'])
 @token_required
 async def update_route():
+    """Update rout for find_camera."""
     form_data = await request.form
     cam_host = form_data.get("cam_host")
     subnet_mask = form_data.get("subnet_mask")

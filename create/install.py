@@ -11,7 +11,9 @@ name_db = os.getenv("DATABASE")
 
 def create_db():
     """Создаём базу данных и таблицы в родительской директории"""
-    db_path = os.path.join('..', f'{name_db}.db')
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))
+    db_path = os.path.join(base_dir, f'{name_db}.db')
     find_db = os.path.isfile(db_path)
     if not find_db:
         try:
@@ -50,7 +52,7 @@ def create_db():
                                 subnet_mask VARCHAR(10)
                             );
                         ''')
-            print(f'Таблица {camera_table} успешно создана!')
+            print(f'Таблица {find_cam} успешно создана!')
             time.sleep(1)
             conn.commit()
         except sqlite3.Error as e:
@@ -67,7 +69,9 @@ find_cam_info = [os.getenv("CAM_HOST"), os.getenv("SUBNET_MASK")]
 def insert_into_user():
     """Добавляем первичного пользователя(данные берём из .env)"""
     user_table = "_user"
-    db_path = os.path.join('..', f'{name_db}.db')
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))
+    db_path = os.path.join(base_dir, f'{name_db}.db')
     try:
         conn = sqlite3.connect(db_path)
         sql = f'''INSERT INTO {user_table} (user, password, status) VALUES (?, ?, ?)'''
@@ -82,7 +86,9 @@ def insert_into_user():
 def insert_into_find_cam():
     """Добавляем первичные данные маршрута к камере (данные берём из .env)"""
     user_table = "_find_camera"
-    db_path = os.path.join('..', f'{name_db}.db')
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))
+    db_path = os.path.join(base_dir, f'{name_db}.db')
     try:
         conn = sqlite3.connect(db_path)
         sql = f'''INSERT INTO {user_table} (cam_host, subnet_mask) VALUES (?, ?)'''
