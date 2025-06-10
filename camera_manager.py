@@ -1,9 +1,42 @@
 import json
 import asyncio
+import subprocess
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from schemas.repository import Repo
+
+
+class FFmpegCameraReader:
+    def __init__(self, url, width, height):
+        self.url = url
+        self.width = width
+        self.height = height
+        self.process = None
+
+    def start(self):
+        self.process = subprocess.Popen([
+            'ffmpeg',
+            '-rtsp_transport', 'tcp',
+            '-i', self.url,
+            '-f', 'rawvideo',
+            '-pix_fmt', 'bgr24',
+            '-vcodec', 'rawvideo',
+            '-fflags', 'nobuffer',
+            '-err_detect', 'ignore_err',
+            '-loglevel', 'quiet',
+            '-'
+        ], stdout=subprocess.PIPE, bufsize=10**8)
+
+    def read(self):
+        raw_frame = self.process.stdout.read(self.width * self.height * 3)
+        if not raw_frame:
+            return None
+        return np.frombuffer(raw_frame, dtype=np.uint8).reshape((self.height, self.width, 3))
+
+    def stop(self):
+        if self.process:
+            self.process.terminate()
 
 
 class CameraManager:
@@ -41,8 +74,8 @@ class CameraManager:
 
         print("Camera configuration loaded:")
         for cam_id, url in self.camera_configs.items():
-            if "stimeout" not in url:
-                self.camera_configs[cam_id] += "?stimeout=20000000"
+            # if "stimeout" not in url:
+            #     self.camera_configs[cam_id] += "?stimeout=20000000"
             print(f"  Camera {cam_id}: {url}")
 
         self.background_subtractors = {

@@ -7,13 +7,15 @@ load_dotenv()
 
 name_db = os.getenv("DATABASE")
 password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()
-user_info = ["odmin", f"{password}", "admin"]
+user_info = ["admin", f"{password}", "test"]
 
 
 def insert_into_user():
-    """Добавляем первичного пользователя(данные берём из .env)"""
+    """Добавляем пользователя"""
     user_table = "_user"
-    db_path = os.path.join("..", f'{name_db}.db')
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))
+    db_path = os.path.join(base_dir, f'{name_db}.db')
     try:
         conn = sqlite3.connect(db_path)
         sql = f'''INSERT INTO {user_table} (user, password, status) VALUES (?, ?, ?)'''
