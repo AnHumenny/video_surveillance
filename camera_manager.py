@@ -1,175 +1,264 @@
 import json
 import asyncio
-import subprocess
+from typing import Dict, Optional
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from schemas.repository import Repo
 
 
-class FFmpegCameraReader:
-    def __init__(self, url, width, height):
-        self.url = url
-        self.width = width
-        self.height = height
-        self.process = None
-
-    def start(self):
-        self.process = subprocess.Popen([
-            'ffmpeg',
-            '-rtsp_transport', 'tcp',
-            '-i', self.url,
-            '-f', 'rawvideo',
-            '-pix_fmt', 'bgr24',
-            '-vcodec', 'rawvideo',
-            '-fflags', 'nobuffer',
-            '-err_detect', 'ignore_err',
-            '-loglevel', 'quiet',
-            '-'
-        ], stdout=subprocess.PIPE, bufsize=10**8)
-
-    def read(self):
-        raw_frame = self.process.stdout.read(self.width * self.height * 3)
-        if not raw_frame:
-            return None
-        return np.frombuffer(raw_frame, dtype=np.uint8).reshape((self.height, self.width, 3))
-
-    def stop(self):
-        if self.process:
-            self.process.terminate()
-
-
 class CameraManager:
-    def __init__(self):
-        """Initialization of basic structures without loading camera configuration."""
+    """Asynchronous manager that maintains exactly **one** VideoCapture per physical
+    camera, runs a background reader task for each camera, and exposes the most
+    recent frame to any number of clients via an asyncio.Queue.  This prevents
+    concurrent access to the same FFmpeg/avcodec context and eliminates the
+    `async_lock` assertion you were hitting.
+    """
+
+    def __init__(self, max_queue_size: int = 10, fps: float = 30.0):
+        """Initialize CameraManager by loading configs and setting up runtime structures."""
         camera_config_json = Repo.select_all_cameras_to_json()
         if not camera_config_json:
             raise ValueError("Camera configuration not found in database")
 
         try:
-            self.camera_configs = json.loads(camera_config_json)
+            self.camera_configs: Dict[str, str] = json.loads(camera_config_json)
         except json.JSONDecodeError as e:
             raise ValueError(f"Error parsing camera configuration: {e}")
 
         print("Camera configuration:")
         for cam_id, url in self.camera_configs.items():
-            print(f"Камера {cam_id}: {url}")
+            print(f"  Camera {cam_id}: {url}")
 
-        self.cameras = {}
+        self.fps = fps
+        self.frame_period = 1.0 / fps
+        self.max_queue_size = max_queue_size
         self.executor = ThreadPoolExecutor(max_workers=4)
-        self.background_subtractors = {cam_id: cv2.createBackgroundSubtractorMOG2() for cam_id in self.camera_configs}
+        # cam_id -> {cap, queue, task}
+        self.cameras: Dict[str, Dict[str, object]] = {}
+        self.background_subtractors = {
+            cam_id: cv2.createBackgroundSubtractorMOG2() for cam_id in self.camera_configs
+        }
 
-    async def load_camera_configs(self):
-        """Asynchronous loading of camera configuration from the database."""
+
+    async def initialize(self, timeout_per_camera: int = 5) -> None:
+        """Start background reader for every camera found in DB.
+
+        Args:
+            timeout_per_camera (int): Timeout in seconds for each camera connection.
+        """
+        tasks = [self._start_camera_reader(cam_id, url, timeout_per_camera)
+                 for cam_id, url in self.camera_configs.items()]
+        await asyncio.gather(*tasks)
+
+    async def load_camera_configs(self) -> bool:
+        """Reload camera configs from DB, start new readers and stop removed ones.
+
+        Returns:
+            bool: True if configs reloaded successfully, False on error.
+        """
         camera_config_json = Repo.select_all_cameras_to_json()
         if not camera_config_json:
-            print("Camera configuration not found in database.")
+            print("[WARN] Camera configuration not found in database.")
             return False
 
         try:
-            self.camera_configs = json.loads(camera_config_json)
+            new_configs = json.loads(camera_config_json)
         except json.JSONDecodeError as e:
             print(f"Error parsing camera configuration: {e}")
             return False
 
-        print("Camera configuration loaded:")
-        for cam_id, url in self.camera_configs.items():
-            # if "stimeout" not in url:
-            #     self.camera_configs[cam_id] += "?stimeout=20000000"
-            print(f"  Camera {cam_id}: {url}")
+        for cam_id, url in new_configs.items():
+            if cam_id not in self.camera_configs:
+                self.camera_configs[cam_id] = url
+                self.background_subtractors[cam_id] = cv2.createBackgroundSubtractorMOG2()
+                await self._start_camera_reader(cam_id, url, timeout=5)
 
-        self.background_subtractors = {
-            cam_id: cv2.createBackgroundSubtractorMOG2()
-            for cam_id in self.camera_configs
-        }
+        for cam_id in list(self.camera_configs.keys()):
+            if cam_id not in new_configs:
+                await self._stop_camera_reader(cam_id)
+                del self.camera_configs[cam_id]
+                self.background_subtractors.pop(cam_id, None)
 
         return True
 
-    async def initialize(self, timeout_per_camera=5):
-        """Initialize all cameras with connection timeout."""
-        tasks = [
-            self._safe_create_capture_with_timeout(cam_id, url, timeout_per_camera)
-            for cam_id, url in self.camera_configs.items()
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    async def get_frame_with_motion_detection(self, cam_id: str, enable_motion: bool) -> Optional[np.ndarray]:
+        """Return the latest frame for a given camera, optionally with motion detection.
 
-        for (cam_id, _), result in zip(self.camera_configs.items(), results):
-            if isinstance(result, Exception):
-                print(f"Error initializing camera {cam_id}: {result}")
-            elif result is None:
-                print(f"Camera {cam_id} not initializing.")
-            else:
-                print(f"Camera {cam_id} initialized successfully.")
-                self.cameras[cam_id] = result
+        Args:
+            cam_id (str): The ID of the camera.
+            enable_motion (bool): Whether to apply motion detection.
 
-    async def _safe_create_capture_with_timeout(self, cam_id, url, timeout):
-        """Create a Time-Limited Camera Capture."""
+        Returns:
+            Optional[np.ndarray]: Latest processed frame or None if unavailable.
+        """
+        cam_entry = self.cameras.get(cam_id)
+        if not cam_entry:
+            print(f"[ERROR] Camera {cam_id} not running")
+            return None
+
+        queue: asyncio.Queue = cam_entry['queue']  # type: ignore
+        try:
+            frame = await asyncio.wait_for(queue.get(), timeout=2.0)
+        except asyncio.TimeoutError:
+            print(f"[WARN] Timeout waiting for frame from camera {cam_id}")
+            return None
+
+        if not enable_motion:
+            return frame
+
+        loop = asyncio.get_running_loop()
+        subtractor = self.background_subtractors[cam_id]
+
+        def detect(frm: np.ndarray) -> np.ndarray:
+            """Motion detection"""
+            fg_mask = subtractor.apply(frm)
+            kernel = np.ones((5, 5), np.uint8)
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
+            fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
+            contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            processed = frm.copy()
+            for cnt in contours:
+                if cv2.contourArea(cnt) < 500:
+                    continue
+                x, y, w, h = cv2.boundingRect(cnt)
+                cv2.rectangle(processed, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            return processed
+
+        return await loop.run_in_executor(self.executor, detect, frame)
+
+    async def cleanup(self) -> None:
+        """Stop all camera readers and release resources."""
+        for cam_id in list(self.cameras.keys()):
+            await self._stop_camera_reader(cam_id)
+        self.executor.shutdown(wait=True)
+        print("All cameras cleaned up.")
+
+    async def _start_camera_reader(self, cam_id: str, url: str, timeout: int) -> None:
+        """Start the background reader task for a single camera.
+
+        Args:
+            cam_id (str): Camera ID.
+            url (str): Camera RTSP or HTTP stream URL.
+            timeout (int): Timeout for initial connection.
+        """
+        cap = await self._safe_create_capture_with_timeout(cam_id, url, timeout)
+        if cap is None:
+            return
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=self.max_queue_size)
+        self.cameras[cam_id] = {"cap": cap, "queue": queue}
+
+        async def reader():
+            """Creating and initializing cv2.VideoCapture with timeout"""
+            loop = asyncio.get_running_loop()
+            while True:
+                def read():
+                    ret, frm = cap.read()
+                    return frm if ret else None
+
+                frame = await loop.run_in_executor(self.executor, read)
+                if frame is None:
+                    print(f"[WARN] Empty frame from {cam_id}, trying reconnect")
+                    ok = await self._try_reconnect(cam_id)
+                    if not ok:
+                        await asyncio.sleep(1)
+                    continue
+
+                if queue.full():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                await queue.put(frame)
+                await asyncio.sleep(self.frame_period)
+
+        task = asyncio.create_task(reader(), name=f"reader-{cam_id}")
+        self.cameras[cam_id]["task"] = task
+        print(f"[INFO] Camera {cam_id} reader started")
+
+    async def _stop_camera_reader(self, cam_id: str) -> None:
+        """Stop the reader task and release resources for a specific camera.
+
+        Args:
+            cam_id (str): Camera ID.
+        """
+        cam_entry = self.cameras.get(cam_id)
+        if not cam_entry:
+            return
+        task: asyncio.Task = cam_entry.get("task")  # type: ignore
+        cap: cv2.VideoCapture = cam_entry.get("cap")  # type: ignore
+
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        if cap:
+            await asyncio.get_running_loop().run_in_executor(self.executor, cap.release)
+        print(f"[INFO] Camera {cam_id} reader stopped")
+        self.cameras.pop(cam_id, None)
+
+    async def _safe_create_capture_with_timeout(self, cam_id: str, url: str, timeout: int):
+        """Create cv2.VideoCapture with timeout and error handling.
+
+        Args:
+            cam_id (str): Camera ID.
+             url (str): Stream URL.
+            timeout (int): Timeout in seconds.
+
+            Returns:
+            Optional[cv2.VideoCapture]: Opened capture or None.
+        """
         try:
             return await asyncio.wait_for(self._create_capture(cam_id, url), timeout=timeout)
         except asyncio.TimeoutError:
-            print(f"Timeout connecting to camera {cam_id} ({timeout} second)")
+            print(f"[ERROR] Timeout connecting to camera {cam_id}")
             return None
         except Exception as e:
-            print(f"Exception when connecting to camera {cam_id}: {e}")
+            print(f"[ERROR] Exception connecting to camera {cam_id}: {e}")
             return None
 
+    async def _create_capture(self, cam_id: str, url: str):
+        """Create cv2.VideoCapture in thread executor.
 
-    async def _create_capture(self, cam_id, url):
-        """Create cv2.VideoCapture in thread pool."""
+        Args:
+            cam_id (str): Camera ID.
+            url (str): Stream URL.
+
+        Returns:
+            Optional[cv2.VideoCapture]: Opened capture or None.
+        """
         loop = asyncio.get_running_loop()
 
-        def create_video_capture(v_url, api):
-            print(f"Trying to open the camera {cam_id}: {v_url}")
-            capture = cv2.VideoCapture(v_url, api)
-            if not capture.isOpened():
-                print(f"cv2.VideoCapture cannot open the camera {cam_id}")
-                capture.release()
+        def open_cap():
+            print(f"[INFO] Opening camera {cam_id}: {url}")
+            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+            if not cap.isOpened():
+                cap.release()
                 return None
-            return capture
+            return cap
 
-        cap = await loop.run_in_executor(self.executor, create_video_capture, url, cv2.CAP_FFMPEG)
+        cap = await loop.run_in_executor(self.executor, open_cap)
         if cap is None:
-            return None
-
-        def check_is_open():
-            return cap.isOpened()
-
-        is_open = await loop.run_in_executor(self.executor, check_is_open)
-        if not is_open:
-            print(f"Camera {cam_id} not opened after creation.")
-            await loop.run_in_executor(self.executor, cap.release)
-            return None
-
+            print(f"[ERROR] cv2.VideoCapture failed for {cam_id}")
         return cap
 
+    async def reinitialize_camera(self, cam_id: str) -> bool:
+        """
+        Reinitialize a specific camera if it is active in the database.
 
-    async def get_camera(self, cam_id):
-        """Retrieve a camera capture asynchronously."""
-        if cam_id not in self.cameras:
-            print(f"Camera {cam_id} not found.")
-            return None
+        This stops the existing reader, removes old configs, fetches the new config,
+        and starts a new reader with updated parameters.
 
-        cap = self.cameras[cam_id]
-        loop = asyncio.get_running_loop()
-        is_open = await loop.run_in_executor(self.executor, cap.isOpened)
-        if not is_open:
-            print(f"Camera {cam_id} disconnected, trying to reconnect...")
-            await loop.run_in_executor(self.executor, cap.release)
-            cap = await self._create_capture(cam_id, self.camera_configs[cam_id])
-            if cap is None:
-                print(f"Failed to reconnect camera {cam_id}.")
-                return None
-            self.cameras[cam_id] = cap
-            print(f"Camera {cam_id} reconnect.")
-            await asyncio.sleep(1)
-        return cap
-
-    async def reinitialize_camera(self, cam_id):
-        """Reinitialize a specific camera if it is active."""
+        Returns:
+            True if the camera was successfully reinitialized, False otherwise.
+        """
         camera_config_json = Repo.reinit_camera(cam_id)
-
         if not camera_config_json:
-            return None
+            print(f"[WARN] No configuration found for camera {cam_id}")
+            return False
 
         try:
             single_config = json.loads(camera_config_json)
@@ -177,102 +266,48 @@ class CameraManager:
             raise ValueError(f"Error parsing camera configuration: {e}")
 
         if cam_id not in single_config:
-            print(f"Camera {cam_id} disabled or not found in configuration. Removed...")
-            if cam_id in self.cameras:
-                cap = self.cameras[cam_id]
-                loop = asyncio.get_running_loop()
-                is_open = await loop.run_in_executor(self.executor, cap.isOpened)
-                if is_open:
-                    await loop.run_in_executor(self.executor, cap.release)
-                del self.cameras[cam_id]
-            if cam_id in self.background_subtractors:
-                del self.background_subtractors[cam_id]
-            if cam_id in self.camera_configs:
-                del self.camera_configs[cam_id]
+            print(f"[INFO] Camera {cam_id} disabled or missing in DB. Removing from runtime.")
+            await self._stop_camera_reader(cam_id)
+            self.camera_configs.pop(cam_id, None)
+            self.background_subtractors.pop(cam_id, None)
             return False
-
-        self.camera_configs[cam_id] = single_config[cam_id]
 
         if cam_id in self.cameras:
-            cap = self.cameras[cam_id]
-            loop = asyncio.get_running_loop()
-            is_open = await loop.run_in_executor(self.executor, cap.isOpened)
-            if is_open:
-                print(f"Freeing the camera {cam_id} before reinitialization...")
-                await loop.run_in_executor(self.executor, cap.release)
-            del self.cameras[cam_id]
+            print(f"[INFO] Stopping camera {cam_id} before reinitialization...")
+            await self._stop_camera_reader(cam_id)
 
-        print(f"Reinitializing the camera{cam_id}...")
-        cap = await self._create_capture(cam_id, self.camera_configs[cam_id])
-        if cap is None:
-            print(f"Failed to reinitialize camera {cam_id}.")
-            return False
-
-        self.cameras[cam_id] = cap
+        self.camera_configs[cam_id] = single_config[cam_id]
         self.background_subtractors[cam_id] = cv2.createBackgroundSubtractorMOG2()
-        print(f"Camera {cam_id} successfully reinitialized.")
+
+        print(f"[INFO] Reinitializing camera {cam_id}...")
+        await self._start_camera_reader(cam_id, self.camera_configs[cam_id], timeout=5)
+        print(f"[INFO] Camera {cam_id} successfully reinitialized.")
         return True
 
-    async def get_frame_with_motion_detection(self, cam_id, status_cam):
-        """Retrieve a frame from the camera with motion detection and bounding boxes.
+    async def _try_reconnect(self, cam_id: str, attempts: int = 3, delay: float = 2.0) -> bool:
+        """Attempt to reconnect to a camera up to `attempts` times.
 
-        Apply background subtraction to detect moving objects and draw bounding boxes around them.
-        Return the processed frame or None if the camera is unavailable or an error occurs.
+        Args:
+            cam_id (str): Camera ID.
+            attempts (int): Number of reconnect attempts.
+            delay (float): Delay in seconds between attempts.
+
+        Returns:
+            bool: True if reconnection succeeded, False otherwise.
         """
-        cap = await self.get_camera(cam_id)
-        if cap is None:
-            return None
+        url = self.camera_configs.get(cam_id)
+        if not url:
+            return False
 
-        loop = asyncio.get_running_loop()
-
-        def read_frame():
-            ret, frame = cap.read()
-            if not ret:
-                return None
-            return frame
-
-        frame = await loop.run_in_executor(self.executor, read_frame)
-        if frame is None:
-            print(f"Failed to read frame from camera {cam_id}.")
-            return None
-
-        if not status_cam:
-            return frame
-
-        def process_motion_detection(frm, subtractor):
-            fg_mask = subtractor.apply(frm)
-            kernel = np.ones((5, 5), np.uint8)
-            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
-            fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
-            contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            processed_frame = frm.copy()
-            for contour in contours:
-                if cv2.contourArea(contour) < 500:
-                    continue
-                x, y, w, h = cv2.boundingRect(contour)
-                cv2.rectangle(processed_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-
-            return processed_frame
-
-        processed_frame = await loop.run_in_executor(
-            self.executor, process_motion_detection, frame, self.background_subtractors[cam_id]
-        )
-        return processed_frame
-
-    async def cleanup(self):
-        """Release camera resources asynchronously."""
-        loop = asyncio.get_running_loop()
-        for cam_id, cam in self.cameras.items():
-            def check_is_open():
-                return cam.isOpened()
-
-            is_open = await loop.run_in_executor(self.executor, check_is_open)
-            if is_open:
-                print(f"Freeing the camera {cam_id}...")
-                def release_camera():
-                    cam.release()
-                await loop.run_in_executor(self.executor, release_camera)
-        self.cameras.clear()
-        self.executor.shutdown(wait=True)
-        print("All cells are released.")
+        for attempt in range(1, attempts + 1):
+            print(f"[INFO] Reconnect {cam_id}: attempt {attempt}/{attempts}")
+            cap = await self._create_capture(cam_id, url)
+            if cap:
+                # replace cap in entry
+                await asyncio.get_running_loop().run_in_executor(self.executor, self.cameras[cam_id]['cap'].release)
+                self.cameras[cam_id]['cap'] = cap
+                print(f"[INFO] Camera {cam_id} reconnected")
+                return True
+            await asyncio.sleep(delay)
+        print(f"[ERROR] Cannot reconnect camera {cam_id}")
+        return False
