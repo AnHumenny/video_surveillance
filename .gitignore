@@ -49,17 +49,3 @@ Thumbs.db
 *.yml
 *.yaml
 *.ini
-
-# текстовые файлы
-*.txt
-*.doc
-*.docx
-*.csv
-*.pdf
-*.fb2
-*.epub
-
-# Графические файлы
-*.jpg
-*.jpeg
-*.gif
