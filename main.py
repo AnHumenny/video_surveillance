@@ -106,15 +106,15 @@ def token_required(f):
     async def decorated(*args, **kwargs):
         token = request.cookies.get('token')
         if not token:
-            return jsonify({"message": "Токен отсутствует"}), 401
+            return jsonify({"message": "No token"}), 401
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
             if data['status'] != 'admin':
-                return jsonify({"message": "Недостаточно прав"}), 403
+                return jsonify({"message": "Insufficient rights"}), 403
         except jwt.ExpiredSignatureError:
-            return jsonify({"message": "Токен истек"}), 401
+            return jsonify({"message": "Token has expired"}), 401
         except jwt.InvalidTokenError:
-            return jsonify({"message": "Неверный токен"}), 401
+            return jsonify({"message": "Invalid token"}), 401
         return await f(*args, **kwargs)
     return decorated
 
@@ -151,35 +151,35 @@ async def check_rtsp(path_to_cam):
 async def video_feed(cam_id):
     """Stream video feed with motion detection for the specified camera."""
     if camera_manager is None:
-        return "CameraManager not initialization", 500
+        return "CameraManager not initialized", 500
 
     async def stream():
         status_cam = await Repo.select_bool_cam(cam_id)
+        empty_in_row = 0
+        max_empty= 10
+
         try:
             while True:
                 frame = await camera_manager.get_frame_with_motion_detection(cam_id, status_cam)
                 if frame is None:
-                    print(f"Failed to get frame for camera {cam_id}")
-                    break
-
-                frame = cv2.resize(frame, (1280, 720))      # принудительное снижение
-                ret, buffer = cv2.imencode('.jpg', frame)
-                if not ret:
-                    print(f"Frame encoding error for camera {cam_id}")
+                    empty_in_row += 1
+                    if empty_in_row >= max_empty:
+                        print(f"[ERROR] Camera {cam_id} is not available >{max_empty} empty frames")
+                        break
+                    await asyncio.sleep(0.05)
                     continue
-                frame_bytes = buffer.tobytes()
+                empty_in_row = 0
+                frame = cv2.resize(frame, (1280, 720))
+                ret, buf = cv2.imencode('.jpg', frame)
+                if not ret:
+                    print(f"[ERROR] JPEG encoding failed for camera {cam_id}")
+                    continue
+
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-
-                await asyncio.sleep(0.033)  # ~30 FPS
-
+                       b'Content-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
+                await asyncio.sleep(0.033)
         except Exception as e:
-            print(f"Streaming error for camera {cam_id}: {e}")
-
-    cap = await camera_manager.get_camera(cam_id)
-
-    if not cap:
-        return "Camera not found or unavailable", 404
+            print(f"[ERROR] Streaming error for camera {cam_id}: {e}")
 
     return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
