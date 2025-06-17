@@ -149,18 +149,23 @@ async def check_rtsp(path_to_cam):
 @app.route('/video/<cam_id>')
 @token_required_camera
 async def video_feed(cam_id):
-    """Stream video feed with motion detection for the specified camera."""
+    """Stream video feed with motion detection and optional screenshot saving."""
     if camera_manager is None:
         return "CameraManager not initialized", 500
 
     async def stream():
-        status_cam = await Repo.select_bool_cam(cam_id)
+        config = await Repo.select_cam_config(cam_id)
+        enable_motion = config["status_cam"]
+        save_screenshot = config["screen"]
+
         empty_in_row = 0
-        max_empty= 10
+        max_empty = 10
 
         try:
             while True:
-                frame = await camera_manager.get_frame_with_motion_detection(cam_id, status_cam)
+                frame = await camera_manager.get_frame_with_motion_detection(
+                    cam_id, enable_motion, save_screenshot
+                )
                 if frame is None:
                     empty_in_row += 1
                     if empty_in_row >= max_empty:
@@ -168,6 +173,7 @@ async def video_feed(cam_id):
                         break
                     await asyncio.sleep(0.05)
                     continue
+
                 empty_in_row = 0
                 frame = cv2.resize(frame, (1280, 720))
                 ret, buf = cv2.imencode('.jpg', frame)
@@ -180,7 +186,6 @@ async def video_feed(cam_id):
                 await asyncio.sleep(0.033)
         except Exception as e:
             print(f"[ERROR] Streaming error for camera {cam_id}: {e}")
-
     return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
@@ -281,6 +286,7 @@ async def add_new_camera():
     new_cam = form_data.get("new_cam")
     motion_detection = 1 if form_data.get("motion_detection") else 0
     visible_cam = 1 if form_data.get("visible_cam") else 0
+    screen_cam = 1 if form_data.get("screen_cam") else 0
     if not new_cam:
         await flash("Camera URL not specified!", "error")
         return redirect(url_for("control"))
@@ -288,7 +294,7 @@ async def add_new_camera():
     if query is False:
         await flash("Error: Invalid RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    q = await Repo.add_new_cam(new_cam, int(motion_detection), int(visible_cam))
+    q = await Repo.add_new_cam(new_cam, int(motion_detection), int(visible_cam), int(screen_cam))
     if q is False:
         await flash("Camera not added: such URL already exists or an error occurred!",
                     "camera_error")
@@ -332,11 +338,12 @@ async def edit_cam():
     path_to_cam = form_data.get("cameraPath")
     motion_detection = 1 if form_data.get("motion_detect") else 0
     visible_camera = 1 if form_data.get("visible_camera") else 0
+    screen_cam = 1 if form_data.get("screen_cam") else 0
     query = await check_rtsp(path_to_cam)
     if query is False:
         await flash("Error: Incorrect RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera)
+    await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera, screen_cam)
     await flash("User added successfully!", "user_success")
     return redirect(url_for("control"))
 

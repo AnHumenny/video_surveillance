@@ -169,7 +169,7 @@ class Repo:
 
 
     @classmethod
-    async def edit_camera(cls, ssid, path_to_cam, motion_detection, visible_camera):
+    async def edit_camera(cls, ssid, path_to_cam, motion_detection, visible_camera, screen_cam):
         """Edit path to camera.
 
             Args:
@@ -178,11 +178,10 @@ class Repo:
                 path_to_cam: str
                 motion_detection: bool
                 visible_camera: bool
+                screen_cam: bool
 
             Returns:
                 200 if ok
-
-
             """
         async with (new_session() as session):
             ssid = int(ssid)
@@ -190,7 +189,9 @@ class Repo:
                 q = update(DCamera).where(DCamera.id == int(ssid)    # type: ignore
                                           ).values(path_to_cam=path_to_cam,
                                                    status_cam=motion_detection,
-                                                   visible_cam=visible_camera)
+                                                   visible_cam=visible_camera,
+                                                   screen_cam=screen_cam
+                                                   )
                 await session.execute(q)
                 await session.commit()
                 return f"Камера {ssid} успешно обновлена!"
@@ -226,17 +227,24 @@ class Repo:
                 raise e
 
     @classmethod
-    async def select_bool_cam(cls, ssid):
-        """Select status_cam from status_cam, returning 1 or 0."""
+    async def select_cam_config(cls, ssid):
+        """
+        Select status_cam and screen from DCamera.
+        Returns: dict with 'status_cam' and 'screen'.
+        """
         async with new_session() as session:
             try:
-                q = Select(DCamera.status_cam).where(DCamera.id == ssid and DCamera.visible_cam == True)   # type: ignore
+                q = Select(
+                    DCamera.status_cam, DCamera.screen_cam).where(
+                    DCamera.id == ssid, DCamera.visible_cam == True)
                 result = await session.execute(q)
-                answer = result.scalar()
-                return answer
+                row = result.first()
+                if row:
+                    return {"status_cam": row[0], "screen": row[1]}
+                return {"status_cam": False, "screen": False}
             except IntegrityError as e:
-                return e
-
+                print(f"[DB ERROR] {e}")
+                return {"status_cam": False, "screen": False}
 
     @classmethod
     async def select_all_users(cls):
@@ -263,7 +271,7 @@ class Repo:
 
 
     @classmethod
-    async def add_new_cam(cls, new_cam, motion_detection, visible_cam):
+    async def add_new_cam(cls, new_cam, motion_detection, visible_cam, screen_cam):
         """Inserts a new camera into the DCamera table.
 
             Args:
@@ -275,13 +283,16 @@ class Repo:
                 :param visible_cam:
                 :param path to new_cam: False or True (default == True)
                 :param motion_detection: False or True (motion detection)
+                :param screen_cam: False or True (motion screenshot)
             """
         async with new_session() as session:
+            print("добавляем в репах", (new_cam, int(motion_detection), int(visible_cam), int(screen_cam)))
             async with session.begin():
                 try:
                     q = insert(DCamera).values(path_to_cam=new_cam,
                                                status_cam=motion_detection,
-                                               visible_cam=visible_cam)
+                                               visible_cam=visible_cam,
+                                               screen_cam=screen_cam)
                     await session.execute(q)
                     await session.commit()
                     return f"Камера {new_cam} успешно добавлена!"

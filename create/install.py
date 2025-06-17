@@ -1,107 +1,65 @@
-import hashlib
-import sqlite3
 import os
+import asyncio
+import hashlib
 import time
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.future import select
+from schemas.database import Model, DUser, DFindCamera
 
 load_dotenv()
 
-name_db = os.getenv("DATABASE")
-
-
-def create_db():
-    """Создаём базу данных и таблицы в родительской директории"""
-    base_dir = os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__)))
-    db_path = os.path.join(base_dir, f'{name_db}.db')
-    find_db = os.path.isfile(db_path)
-    if not find_db:
-        try:
-            conn = sqlite3.connect(db_path)
-            print(f'База данных {name_db}.db создана по пути: {os.path.abspath(db_path)}')
-
-            user_table = "_user"
-            camera_table = "_camera"
-            find_cam = "_find_camera"
-
-            conn.execute(f'''
-                CREATE TABLE IF NOT EXISTS {user_table}(
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user VARCHAR(20) UNIQUE,
-                    password VARCHAR(100), 
-                    status VARCHAR(20)
-                );
-            ''')
-            print(f'Таблица {user_table} успешно создана!')
-            time.sleep(1)
-            conn.execute(f'''
-                CREATE TABLE IF NOT EXISTS {camera_table}(
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    path_to_cam VARCHAR(100) UNIQUE,
-                    status_cam BOOL,
-                    visible_cam BOOL
-                );
-            ''')
-            print(f'Таблица {camera_table} успешно создана!')
-            time.sleep(1)
-
-            conn.execute(f'''
-                            CREATE TABLE IF NOT EXISTS {find_cam}(
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                cam_host VARCHAR(100),
-                                subnet_mask VARCHAR(10)
-                            );
-                        ''')
-            print(f'Таблица {find_cam} успешно создана!')
-            time.sleep(1)
-            conn.commit()
-        except sqlite3.Error as e:
-            print(f'Ошибка при создании базы данных или таблиц: {e}')
-        finally:
-            conn.close()
-    else:
-        print(f'База данных {name_db}.db уже существует по пути: {os.path.abspath(db_path)}')
+base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+db_path = os.path.join(base_dir, f'{os.getenv("DATABASE")}.db')
+engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=True)
+new_session = async_sessionmaker(engine, expire_on_commit=False)
 
 password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()
-user_info = [os.getenv("ADMIN"), f"{password}", "admin"]
-find_cam_info = [os.getenv("CAM_HOST"), os.getenv("SUBNET_MASK")]
+user_info = {
+    "user": os.getenv("ADMIN"),
+    "password": password,
+    "status": "admin"
+}
+find_cam_info = {
+    "cam_host": os.getenv("CAM_HOST"),
+    "subnet_mask": os.getenv("SUBNET_MASK")
+}
 
-def insert_into_user():
-    """Добавляем первичного пользователя(данные берём из .env)"""
-    user_table = "_user"
-    base_dir = os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__)))
-    db_path = os.path.join(base_dir, f'{name_db}.db')
-    try:
-        conn = sqlite3.connect(db_path)
-        sql = f'''INSERT INTO {user_table} (user, password, status) VALUES (?, ?, ?)'''
-        conn.execute(sql, user_info)
-        conn.commit()
-        print(f'Пользователь {user_info[0]} добавлен!')
-    except sqlite3.Error as e:
-        print(f'Ошибка при добавлении пользователя: {e}')
-    finally:
-        conn.close()
 
-def insert_into_find_cam():
-    """Добавляем первичные данные маршрута к камере (данные берём из .env)"""
-    user_table = "_find_camera"
-    base_dir = os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__)))
-    db_path = os.path.join(base_dir, f'{name_db}.db')
-    try:
-        conn = sqlite3.connect(db_path)
-        sql = f'''INSERT INTO {user_table} (cam_host, subnet_mask) VALUES (?, ?)'''
-        conn.execute(sql, find_cam_info)
-        conn.commit()
-        print(f'Маршрут {find_cam_info} добавлен!')
-    except sqlite3.Error as e:
-        print(f'Ошибка при добавлении пользователя: {e}')
-    finally:
-        conn.close()
+async def create_db():
+    """Create a database and tables (if they do not exist)"""
+    async with engine.begin() as conn:
+        await conn.run_sync(Model.metadata.create_all)
+    print("[INFO] Таблицы успешно созданы или уже существуют.")
 
-create_db()
-time.sleep(1)
-insert_into_user()
-time.sleep(1)
-insert_into_find_cam()
+async def insert_into_user():
+    """Adding a primary user"""
+    async with new_session() as session:
+        async with session.begin():
+            stmt = select(DUser).where(DUser.user == user_info["user"])
+            result = await session.execute(stmt)
+            if result.scalar():
+                print(f"[INFO] Пользователь {user_info['user']} уже существует.")
+                return
+            session.add(DUser(**user_info))
+            print(f"[INFO] Пользователь {user_info['user']} добавлен!")
+
+
+async def insert_into_find_cam():
+    """Adding a Primary Route Range to Search for Cameras"""
+    async with new_session() as session:
+        async with session.begin():
+            stmt = select(DFindCamera).where(DFindCamera.cam_host == find_cam_info["cam_host"])
+            result = await session.execute(stmt)
+            if result.scalar():
+                print(f"[INFO] Маршрут {find_cam_info['cam_host']} уже существует.")
+                return
+            session.add(DFindCamera(**find_cam_info))
+            print(f"[INFO] Маршрут {find_cam_info} добавлен!")
+
+if __name__ == "__main__":
+    asyncio.run(create_db())
+    time.sleep(1)
+    asyncio.run(insert_into_user())
+    time.sleep(1)
+    asyncio.run(insert_into_find_cam())
