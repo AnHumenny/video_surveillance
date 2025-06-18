@@ -20,6 +20,7 @@ class DCamera(Model):
     path_to_cam = Column(String(200), unique=True)
     status_cam = Column(Boolean, nullable=False)
     visible_cam = Column(Boolean, nullable=True)
+    screen_cam = Column(Boolean, nullable=False)
 
 
 class DUser(Model):

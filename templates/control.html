@@ -33,13 +33,19 @@
                     <h5>Добавить камеру</h5>
                     <p><i>Example: rtsp://user:password@192.168.1.4:554/h265</i><br>
                        <i>Example: rtsp://user:password@192.168.1.4:554/live/ch00_1</i></p>
-                    <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
+                    <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 10px;">
+                        <div>
                         <label for="new_cam">Маршрут:</label>
-                        <input type="text" name="new_cam" id="new_cam" required>
-                        <label for="motion_detection">Детекция движения:</label>
-                        <input type="checkbox" name="motion_detection" id="motion_detection" value="1">
-                        <label for="visible_cam">Видимость камеры:</label>
-                        <input type="checkbox" name="visible_cam" id="visible_cam" value="1">
+                            <input type="text" name="new_cam" id="new_cam" required>
+                        </div>
+                        <div style="display: flex; gap: 20px; align-items: center;">
+                            <label for="motion_detection">Детекция движения:</label>
+                            <input type="checkbox" name="motion_detection" id="motion_detection" value="1">
+                            <label for="visible_cam">Видимость камеры:</label>
+                            <input type="checkbox" name="visible_cam" id="visible_cam" value="1">
+                            <label for="screen_cam">Скриншот:</label>
+                            <input type="checkbox" name="screen_cam" id="screen_cam" value="1">
+                        </div>
                         <input type="submit" value="Добавить">
                     </form>
                     {% if get_flashed_messages(with_categories=True) %}
@@ -124,6 +130,11 @@
                             {% else %}
                             <img src="{{ url_for('static', filename='image/green.png') }}" title="Детекция движения включена">
                             {% endif %}
+                            {% if not row.screen_cam %}
+                            <img src="{{ url_for('static', filename='image/red.png') }}" title="Скриншот отключём">
+                            {% else %}
+                            <img src="{{ url_for('static', filename='image/green.png') }}" title="Скриншот включён">
+                            {% endif %}
                             <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ masked_urls[row.id] }}</a>
                             <a href="#" onclick="reinitializeCamera('{{ row.id }}')">
                                 <img src="{{ url_for('static', filename='image/update.png') }}" alt="Переинициализировать" title="Переинициализировать">
@@ -147,10 +158,12 @@
                     <input type="text" id="cameraId" name="cameraId" readonly>
                     <label for="cameraPath">Маршрут камеры:</label>
                     <input type="text" id="cameraPath" name="cameraPath" required>
-                    <label for="motion_detection">Детекция движения:</label>
-                    <input type="checkbox" name="motion_detect" id="motion_detect" value="1">
                     <label for="motion_detection">Видимость камеры:</label>
                     <input type="checkbox" name="visible_camera" id="visible_camera" value="0">
+                    <label for="motion_detection">Детекция движения:</label>
+                    <input type="checkbox" name="motion_detect" id="motion_detect" value="1">
+                    <label for="screen_cam">Скриншот:</label>
+                    <input type="checkbox" name="screen_cam" id="screen_camera" value="0">
                     <div style="text-align: right; margin-top: 10px;">
                         <button type="button" class="btn-cancel" onclick="closeEditPanel()">Отмена</button>
                         <button type="submit" class="btn-save">Сохранить</button>

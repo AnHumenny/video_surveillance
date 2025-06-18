@@ -1,5 +1,8 @@
 import json
 import asyncio
+import os
+from datetime import datetime
+import time
 from typing import Dict, Optional
 import cv2
 import numpy as np
@@ -18,6 +21,7 @@ class CameraManager:
     def __init__(self, max_queue_size: int = 10, fps: float = 30.0):
         """Initialize CameraManager by loading configs and setting up runtime structures."""
         camera_config_json = Repo.select_all_cameras_to_json()
+        self.last_screenshot_times = {}
         if not camera_config_json:
             raise ValueError("Camera configuration not found in database")
 
@@ -34,7 +38,6 @@ class CameraManager:
         self.frame_period = 1.0 / fps
         self.max_queue_size = max_queue_size
         self.executor = ThreadPoolExecutor(max_workers=4)
-        # cam_id -> {cap, queue, task}
         self.cameras: Dict[str, Dict[str, object]] = {}
         self.background_subtractors = {
             cam_id: cv2.createBackgroundSubtractorMOG2() for cam_id in self.camera_configs
@@ -82,12 +85,15 @@ class CameraManager:
 
         return True
 
-    async def get_frame_with_motion_detection(self, cam_id: str, enable_motion: bool) -> Optional[np.ndarray]:
-        """Return the latest frame for a given camera, optionally with motion detection.
+    async def get_frame_with_motion_detection(
+            self, cam_id: str, enable_motion: bool, save_screenshot: bool = False
+    ) -> Optional[np.ndarray]:
+        """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
 
         Args:
             cam_id (str): The ID of the camera.
             enable_motion (bool): Whether to apply motion detection.
+            save_screenshot (bool): Whether to save a screenshot on central motion detection.
 
         Returns:
             Optional[np.ndarray]: Latest processed frame or None if unavailable.
@@ -111,18 +117,48 @@ class CameraManager:
         subtractor = self.background_subtractors[cam_id]
 
         def detect(frm: np.ndarray) -> np.ndarray:
-            """Motion detection"""
+            """Motion detection, optionally with screenshot saving."""
             fg_mask = subtractor.apply(frm)
             kernel = np.ones((5, 5), np.uint8)
             fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
             fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            height, width = frm.shape[:2]
+            center_x, center_y = width // 2, height // 2
+            margin_x = width // 6
+            margin_y = height // 6
+
             processed = frm.copy()
+            screenshot_taken = False
+
+            now = time.time()
+            last_time = self.last_screenshot_times.get(cam_id, 0)
+
             for cnt in contours:
                 if cv2.contourArea(cnt) < 500:
                     continue
                 x, y, w, h = cv2.boundingRect(cnt)
+                cx, cy = x + w // 2, y + h // 2
+                # пока пилим в центр
+                if (
+                        save_screenshot and
+                        (center_x - margin_x <= cx <= center_x + margin_x) and
+                        (center_y - margin_y <= cy <= center_y + margin_y) and
+                        not screenshot_taken and
+                        (now - last_time) > 5
+                ):
+                    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
+                    save_dir = f"screenshots/camera_{cam_id}/{timestamp[:10]}/"
+                    os.makedirs(save_dir, exist_ok=True)
+                    filename = os.path.join(save_dir, f"motion_{timestamp}.jpg")
+                    cv2.imwrite(filename, frm)               # celery -> email
+                    print(f"[INFO] Motion detected. Saved: {filename}")
+                    self.last_screenshot_times[cam_id] = now
+                    screenshot_taken = True
+
                 cv2.rectangle(processed, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
             return processed
 
         return await loop.run_in_executor(self.executor, detect, frame)
@@ -303,7 +339,6 @@ class CameraManager:
             print(f"[INFO] Reconnect {cam_id}: attempt {attempt}/{attempts}")
             cap = await self._create_capture(cam_id, url)
             if cap:
-                # replace cap in entry
                 await asyncio.get_running_loop().run_in_executor(self.executor, self.cameras[cam_id]['cap'].release)
                 self.cameras[cam_id]['cap'] = cap
                 print(f"[INFO] Camera {cam_id} reconnected")
