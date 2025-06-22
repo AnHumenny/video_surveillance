@@ -1,0 +1,86 @@
+{% include 'head.html' %}
+
+<body>
+  <div class="header">
+    <a href="{{ url_for('index') }}">
+      <img src="{{ url_for('static', filename='image/home.png') }}" alt="Главная"></a>
+    <a href="{{ url_for('control') }}">
+      <img src="{{ url_for('static', filename='image/admin.png') }}" alt="Панель управления"></a>
+    <a href="{{ url_for('logout') }}">
+      <img src="{{ url_for('static', filename='image/exit.png') }}" alt="Выйти"></a>
+  </div>
+
+  <div class="main-layout">
+    <div class="camera-sidebar">
+      <div id="notification" class="notification">
+        {% for cam_id, url in all_cameras.items() %}
+          <a href="{{ url_for('view_camera', cam_id=cam_id) }}">
+            <button class="camera-btn">Камера {{ cam_id }}</button>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="camera-view">
+      <div class="camera-toolbar">
+        <div class="toolbar-buttons">
+          <button onclick="captureScreenshot()" class="camera-btn" style="width: auto;">Сделать скриншот</button>
+          <button onclick="startRecording()" class="camera-btn" style="width: auto;">Начать запись</button>
+          <button onclick="stopRecording()" class="camera-btn" style="width: auto;">Остановить запись</button>
+          <h4 style="margin: 0;">Камера {{ cam_id }}</h4>
+        </div>
+      </div>
+      <img id="cam-feed" src="/video/{{ cam_id }}" onerror="handleStreamError()" />
+    </div>
+  </div>
+
+  <script>
+    let retryInterval = null;
+    let lastUpdate = Date.now();
+    function forceReconnect() {
+      const now = Date.now();
+      if (now - lastUpdate > 10000) {
+        console.warn("Принудительное переподключение из-за тишины");
+        const img = document.getElementById("cam-feed");
+        img.src = `/video/{{ cam_id }}?t=${now}`;
+        lastUpdate = now;
+      }
+    }
+    function handleStreamError() {
+      console.warn("Ошибка потока, пробуем переподключиться...");
+      forceReconnect();
+    }
+    document.getElementById("cam-feed").addEventListener("load", () => {
+      lastUpdate = Date.now();
+    });
+    setInterval(forceReconnect, 30000);
+</script>
+   <script>
+      function captureScreenshot() {
+      fetch("/screenshot/{{ cam_id }}", {
+        method: "POST"
+      })
+      .then(response => {
+        if (response.ok) {
+          alert("Скриншот сохранён!");
+        } else {
+          alert("Ошибка при создании скриншота.");
+        }
+      })
+      .catch(error => {
+        console.error("Ошибка:", error);
+        alert("Не удалось подключиться к серверу.");
+      });
+    }
+   </script>
+   <script>>
+     function startRecording() {
+     alert("Запись пока не реализована");
+     }
+  </script>
+  <script>>
+     function stopRecording() {
+     alert("Запись пока не реализована");
+     }
+  </script>
+</body>

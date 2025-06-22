@@ -175,7 +175,8 @@ async def video_feed(cam_id):
                     continue
 
                 empty_in_row = 0
-                frame = cv2.resize(frame, (1280, 720))
+                width, height = map(int, os.getenv("SIZE_VIDEO").split(","))
+                frame = cv2.resize(frame, (width, height))
                 ret, buf = cv2.imencode('.jpg', frame)
                 if not ret:
                     print(f"[ERROR] JPEG encoding failed for camera {cam_id}")
@@ -187,6 +188,13 @@ async def video_feed(cam_id):
         except Exception as e:
             print(f"[ERROR] Streaming error for camera {cam_id}: {e}")
     return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@app.route('/view/<cam_id>')
+@token_required_camera
+async def view_camera(cam_id):
+    all_cameras = camera_manager.camera_configs
+    return await render_template("camera_view.html", cam_id=cam_id, all_cameras=all_cameras)
 
 
 @app.route('/update_route', methods=['GET', 'POST'])
@@ -467,6 +475,25 @@ async def reinitialize_camera(cam_id):
             return jsonify({"success": False, "error": f"Failed to reinitialize camera {cam_id}"}), 500
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/screenshot/<cam_id>', methods=['POST'])
+@token_required
+async def take_screenshot(cam_id):
+    """Forced screenshot"""
+    if camera_manager is None:
+        return "CameraManager not initialized", 500
+    frame = await camera_manager.get_current_frame(cam_id)
+    if frame is None:
+        return "No frame available", 404
+    timestamp = datetime.now()
+    filename = f"camera_{cam_id}_{timestamp.strftime('%Y%m%d_%H%M%S')}.jpg"
+    date_str = timestamp.strftime('%Y-%m-%d')
+    folder = os.path.join("screenshots", "current",  f"camera {cam_id}", date_str)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, filename)
+    cv2.imwrite(path, frame)
+    return jsonify({"status": "ok", "filename": filename})
 
 
 async def cleanup():

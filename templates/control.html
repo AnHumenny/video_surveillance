@@ -1,4 +1,5 @@
 {% include 'head.html' %}
+
 <div class="container">
     {% if status != "admin" %}
         <div class="header">
@@ -9,6 +10,7 @@
             </form>
         </div>
     {% endif %}
+
     {% if status == "admin" %}
         <div class="header">
             <h5>Панель управления
@@ -18,6 +20,7 @@
                     <img src="{{ url_for('static', filename='image/exit.png') }}" alt="Выйти"></a>
             </h5>
         </div>
+
         <div class="content">
             <div class="left-column">
                 <div class="add-camera">
@@ -29,6 +32,7 @@
                         <input type="submit" value="Добавить">
                     </form>
                 </div>
+
                 <div class="add-camera">
                     <h5>Добавить камеру</h5>
                     <p><i>Example: rtsp://user:password@192.168.1.4:554/h265</i><br>
@@ -56,6 +60,7 @@
                         {% endfor %}
                     {% endif %}
                 </div>
+
                 <div class="add-user">
                     <h5>Добавить пользователя</h5>
                     <form method="post" action="{{ url_for('add_new_user') }}" enctype="multipart/form-data">
@@ -83,6 +88,7 @@
                     {% endfor %}
                 </div>
             </div>
+
             <div class="right-column">
                 <div class="camera-list">
                     <button onclick="scanRTSP()">Сканировать сеть</button>
@@ -121,21 +127,21 @@
                     {% for row in all_cameras %}
                         <div class="camera-item">
                             {% if not row.visible_cam %}
-                            <img src="{{ url_for('static', filename='image/red.png') }}" title="Камера отключена">
+                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Камера отключена">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/green.png') }}" title="Камера включена">
+                            <img src="{{ url_for('static', filename='image/yes.png') }}" title="Камера включена">
                             {% endif %} &nbsp;&nbsp;
                             {% if not row.status_cam %}
-                            <img src="{{ url_for('static', filename='image/red.png') }}" title="Детекция движения отключена">
+                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Детекция движения отключена">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/green.png') }}" title="Детекция движения включена">
+                            <img src="{{ url_for('static', filename='image/yes.png') }}" title="Детекция движения включена">
                             {% endif %}
                             {% if not row.screen_cam %}
-                            <img src="{{ url_for('static', filename='image/red.png') }}" title="Скриншот отключём">
+                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Скриншот отключём">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/green.png') }}" title="Скриншот включён">
+                            <img src="{{ url_for('static', filename='image/yes.png') }}" title="Скриншот включён">
                             {% endif %}
-                            <a href="http://{{ host }}:{{ port }}/video/{{ row.id }}">{{ masked_urls[row.id] }}</a>
+                            <a href="http://{{ host }}:{{ port }}/view/{{ row.id }}">{{ masked_urls[row.id] }}</a>
                             <a href="#" onclick="reinitializeCamera('{{ row.id }}')">
                                 <img src="{{ url_for('static', filename='image/update.png') }}" alt="Переинициализировать" title="Переинициализировать">
                                  </a> &nbsp;
