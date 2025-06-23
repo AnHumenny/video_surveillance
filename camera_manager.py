@@ -281,6 +281,16 @@ class CameraManager:
             print(f"[ERROR] cv2.VideoCapture failed for {cam_id}")
         return cap
 
+    async def get_current_frame(self, cam_id):
+        """make current screenshot"""
+        cam_data = self.cameras.get(cam_id)
+        if cam_data:
+            cap = cam_data.get("cap")
+            if cap:
+                ret, frame = cap.read()
+                return frame if ret else None
+        return None
+
     async def reinitialize_camera(self, cam_id: str) -> bool:
         """
         Reinitialize a specific camera if it is active in the database.

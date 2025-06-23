@@ -1,6 +1,6 @@
 {% include 'head.html' %}
 <body>
-<div class="container">
+    <div class="container">
         <div class="header">
             {% if username %}
                 <span>Привет, {{ username }}</span> &nbsp;&nbsp;&nbsp;
@@ -15,20 +15,15 @@
         </div>
 
         <div id="notification" class="notification"></div>
-
-        <div class="camera-buttons">
+        <div class="camera-grid">
             {% for cam_id, url in camera_configs.items() %}
-                {% if loop.index0 % 3 == 0 %}
-                    <div class="camera-row">
-                {% endif %}
-                <a href="{{ url_for('video_feed', cam_id=cam_id) }}">
-                    <button class="camera-btn">Камера {{ cam_id }}</button> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                </a>
-                {% if loop.index0 % 3 == 2 or loop.last %}
-                    </div>
-                {% endif %}
+                <div class="camera-grid-item">
+                    <a href="{{ url_for('view_camera', cam_id=cam_id) }}" class="camera-btn">
+                        Камера {{ cam_id }}
+                    </a>
+                </div>
             {% endfor %}
         </div>
-
     </div>
+
 </body>
