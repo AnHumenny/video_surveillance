@@ -489,11 +489,41 @@ async def take_screenshot(cam_id):
     timestamp = datetime.now()
     filename = f"camera_{cam_id}_{timestamp.strftime('%Y%m%d_%H%M%S')}.jpg"
     date_str = timestamp.strftime('%Y-%m-%d')
-    folder = os.path.join("screenshots", "current",  f"camera {cam_id}", date_str)
+    folder = os.path.join("screenshots", "current", f"camera {cam_id}", date_str)
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, filename)
     cv2.imwrite(path, frame)
+    await start_recording(cam_id)
     return jsonify({"status": "ok", "filename": filename})
+
+
+@app.route('/start_recording/<cam_id>', methods=['POST'])   # тест, привязать к срабатыванию скриншота на детекцию движения
+@token_required_camera
+async def start_recording(cam_id):
+    """short entry (10 sec.)"""
+    if camera_manager is None:
+        return "CameraManager not initialized", 500
+    print("cam_id", cam_id)
+    path = await camera_manager.record_video(cam_id, duration_sec=10)
+    if not path:
+        return jsonify({"status": "error", "message": "Failed to record video"}), 500
+    return jsonify({"status": "ok", "file": path})
+
+
+@app.route("/start_recording_loop/<cam_id>", methods=["POST"])
+@token_required_camera
+async def start_recording_loop(cam_id):
+    """long recording in 30 second blocks"""
+    asyncio.create_task(camera_manager.start_continuous_recording(cam_id))
+    return jsonify({"status": "recording_started"})
+
+
+@app.route("/stop_recording_loop/<cam_id>", methods=["POST"])
+@token_required_camera
+async def stop_recording_loop(cam_id):
+    """stop entry"""
+    await camera_manager.stop_continuous_recording(cam_id)
+    return jsonify({"status": "recording_stopped"})
 
 
 async def cleanup():

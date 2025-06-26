@@ -25,8 +25,8 @@
       <div class="camera-toolbar">
         <div class="toolbar-buttons">
           <button onclick="captureScreenshot()" class="camera-btn" style="width: auto;">Сделать скриншот</button>
-          <button onclick="startRecording()" class="camera-btn" style="width: auto;">Начать запись</button>
-          <button onclick="stopRecording()" class="camera-btn" style="width: auto;">Остановить запись</button>
+          <button onclick="startRecording('{{ cam_id }}')" class="camera-btn" style="width: auto;">Короткая запись</button>
+          <button onclick="toggleRecording('{{ cam_id }}')">Старт/Стоп запись</button>
           <h4 style="margin: 0;">Камера {{ cam_id }}</h4>
         </div>
       </div>
@@ -55,6 +55,7 @@
     });
     setInterval(forceReconnect, 30000);
 </script>
+
    <script>
       function captureScreenshot() {
       fetch("/screenshot/{{ cam_id }}", {
@@ -73,14 +74,41 @@
       });
     }
    </script>
-   <script>>
-     function startRecording() {
-     alert("Запись пока не реализована");
-     }
-  </script>
-  <script>>
-     function stopRecording() {
-     alert("Запись пока не реализована");
-     }
-  </script>
+
+  <script>
+function startRecording(camId) {
+  fetch(`/start_recording/${camId}`, { method: "POST" })
+    .then(response => {
+      if (!response.ok) {
+        alert("Ошибка при запуске записи.");
+      }
+    })
+    .catch(error => {
+      console.error("Ошибка:", error);
+      alert("Не удалось подключиться к серверу.");
+    });
+}
+</script>
+
+<script>
+let isRecording = false;
+
+function toggleRecording(cam_id) {
+  const url = isRecording
+    ? `/stop_recording_loop/${cam_id}`
+    : `/start_recording_loop/${cam_id}`;
+  fetch(url, { method: "POST" })
+    .then(response => {
+      if (response.ok) {
+        isRecording = !isRecording;
+      } else {
+        alert("Ошибка при отправке команды.");
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert("Сервер недоступен.");
+    });
+}
+</script>
 </body>
