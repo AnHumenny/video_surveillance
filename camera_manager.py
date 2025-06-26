@@ -21,6 +21,8 @@ class CameraManager:
     def __init__(self, max_queue_size: int = 10, fps: float = 30.0):
         """Initialize CameraManager by loading configs and setting up runtime structures."""
         camera_config_json = Repo.select_all_cameras_to_json()
+        self.recording_flags = {}
+        self.recording_tasks = {}
         self.last_screenshot_times = {}
         if not camera_config_json:
             raise ValueError("Camera configuration not found in database")
@@ -159,6 +161,11 @@ class CameraManager:
 
                 cv2.rectangle(processed, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
+            if self.recording_flags.get(cam_id, False):
+                cv2.rectangle(processed, (10, 10), (150, 60), (0, 0, 255), -1)
+                cv2.putText(processed, "REC", (20, 45), cv2.FONT_HERSHEY_SIMPLEX,
+                            1.2, (255, 255, 255), 2)
+
             return processed
 
         return await loop.run_in_executor(self.executor, detect, frame)
@@ -267,7 +274,6 @@ class CameraManager:
             Optional[cv2.VideoCapture]: Opened capture or None.
         """
         loop = asyncio.get_running_loop()
-
         def open_cap():
             print(f"[INFO] Opening camera {cam_id}: {url}")
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
@@ -275,7 +281,6 @@ class CameraManager:
                 cap.release()
                 return None
             return cap
-
         cap = await loop.run_in_executor(self.executor, open_cap)
         if cap is None:
             print(f"[ERROR] cv2.VideoCapture failed for {cam_id}")
@@ -291,6 +296,93 @@ class CameraManager:
                 return frame if ret else None
         return None
 
+    async def start_continuous_recording(self, cam_id: str):
+        """Starts continuous video recording for 30 seconds until stop command."""
+        if cam_id in self.recording_flags and self.recording_flags[cam_id]:
+            print(f"[INFO] Registration is already underway for {cam_id}")
+            return
+        self.recording_flags[cam_id] = True
+        print(f"[INFO] Start continuous recording for {cam_id}")
+
+        async def record_loop():
+            """
+            Starts a looped (continuous) video recording in 30 second blocks.
+
+            Recording continues until a stop command is received.
+            Each fragment is saved separately. Uses the self.recording_flags[cam_id] flag
+            to control start/stop.
+            """
+            while self.recording_flags.get(cam_id, False):
+                await self.record_video(cam_id, duration_sec=30)
+        task = asyncio.create_task(record_loop(), name=f"recording-{cam_id}")
+        self.recording_tasks[cam_id] = task
+
+
+    async def stop_continuous_recording(self, cam_id: str):
+        """Stops the current continuous recording of the camera."""
+        if self.recording_flags.get(cam_id):
+            self.recording_flags[cam_id] = False
+            print(f"[INFO] Recording stopped for {cam_id}")
+            task = self.recording_tasks.pop(cam_id, None)
+            if task:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        else:
+            print(f"[INFO] The recording was not made for {cam_id}")
+
+    async def record_video(self, cam_id: str, duration_sec: int = 10) -> Optional[str]:
+        """Records video from the camera for the specified time (in seconds)."""
+        cam_data = self.cameras.get(cam_id)
+        if not cam_data:
+            print(f"[ERROR] Camera {cam_id} not found")
+            return None
+        queue: asyncio.Queue = cam_data["queue"]
+        now = datetime.now()
+        filename = f"{cam_id}_{now.strftime('%Y%m%d_%H%M%S')}.avi"
+        current_stamp = now.strftime("%Y-%m-%d")
+        save_path = os.path.join("recordings", cam_id, f"camera_{cam_id}_{current_stamp}")
+        os.makedirs(save_path, exist_ok=True)
+        full_path = os.path.join(save_path, filename)
+        print(f"[INFO] Record video started. Saved: {filename}")
+
+        try:
+            frame = await asyncio.wait_for(queue.get(), timeout=5)
+        except asyncio.TimeoutError:
+            print(f"[ERROR] No camera footage {cam_id}")
+            return None
+
+        height, width = frame.shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        out = cv2.VideoWriter(full_path, fourcc, self.fps, (width, height))
+
+        loop = asyncio.get_running_loop()
+
+        async def writer():
+            """
+            Asynchronous task of recording a fixed-duration video clip.
+
+            Reads frames from the queue and writes them to a file using cv2.VideoWriter`.
+            The recording continues for `duration_sec` seconds, taking into account the time.
+            All write and release operations of the `out` resource are performed in the `ThreadPoolExecutor`,
+            to avoid blocking the main asynchronous thread.
+
+            """
+            end_time = time.time() + duration_sec
+            while time.time() < end_time:
+                try:
+                    frame = await asyncio.wait_for(queue.get(), timeout=2)
+                    await loop.run_in_executor(self.executor, out.write, frame)
+                except asyncio.TimeoutError:
+                    continue
+            await loop.run_in_executor(self.executor, out.release)
+
+        await writer()
+        print(f"[INFO] Video saved: {full_path}")
+        return full_path
+
+
     async def reinitialize_camera(self, cam_id: str) -> bool:
         """
         Reinitialize a specific camera if it is active in the database.
@@ -305,7 +397,6 @@ class CameraManager:
         if not camera_config_json:
             print(f"[WARN] No configuration found for camera {cam_id}")
             return False
-
         try:
             single_config = json.loads(camera_config_json)
         except json.JSONDecodeError as e:
