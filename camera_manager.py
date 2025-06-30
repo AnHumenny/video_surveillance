@@ -1,14 +1,17 @@
 import json
 import asyncio
+import logging
 import os
 from datetime import datetime
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
+from numpy import ndarray
 from schemas.repository import Repo
 
+logger = logging.getLogger(__name__)
 
 class CameraManager:
     """Asynchronous manager that maintains exactly **one** VideoCapture per physical
@@ -32,9 +35,9 @@ class CameraManager:
         except json.JSONDecodeError as e:
             raise ValueError(f"Error parsing camera configuration: {e}")
 
-        print("Camera configuration:")
+        logger.info("Camera configuration:")
         for cam_id, url in self.camera_configs.items():
-            print(f"  Camera {cam_id}: {url}")
+            logger.info(f"  Camera {cam_id}: {url}")
 
         self.fps = fps
         self.frame_period = 1.0 / fps
@@ -64,13 +67,13 @@ class CameraManager:
         """
         camera_config_json = Repo.select_all_cameras_to_json()
         if not camera_config_json:
-            print("[WARN] Camera configuration not found in database.")
+            logger.info("[WARN] Camera configuration not found in database.")
             return False
 
         try:
             new_configs = json.loads(camera_config_json)
         except json.JSONDecodeError as e:
-            print(f"Error parsing camera configuration: {e}")
+            logger.info(f"Error parsing camera configuration: {e}")
             return False
 
         for cam_id, url in new_configs.items():
@@ -87,9 +90,33 @@ class CameraManager:
 
         return True
 
+
+    async def get_frame_without_motion_detection(self, cam_id: str) -> Optional[np.ndarray]:
+        """Return the latest frame for a given camera without any processing.
+
+        Args:
+            cam_id (str): The ID of the camera.
+
+        Returns:
+            Optional[np.ndarray]: Latest frame or None if unavailable.
+        """
+        cam_entry = self.cameras.get(cam_id)
+        if not cam_entry:
+            logger.error(f"[ERROR] Camera {cam_id} not running")
+            return None
+
+        queue: asyncio.Queue = cam_entry['queue']  # type: ignore
+        try:
+            frame = await asyncio.wait_for(queue.get(), timeout=2.0)
+            return frame
+        except asyncio.TimeoutError:
+            logger.warning(f"[WARN] Timeout waiting for frame from camera {cam_id}")
+            return None
+
+
     async def get_frame_with_motion_detection(
             self, cam_id: str, enable_motion: bool, save_screenshot: bool = False
-    ) -> Optional[np.ndarray]:
+    ) -> Tuple[Optional[np.ndarray], Optional[str]]:
         """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
 
         Args:
@@ -102,24 +129,26 @@ class CameraManager:
         """
         cam_entry = self.cameras.get(cam_id)
         if not cam_entry:
-            print(f"[ERROR] Camera {cam_id} not running")
-            return None
+            logger.error(f"[ERROR] Camera {cam_id} not running")
+            return None, None
 
         queue: asyncio.Queue = cam_entry['queue']  # type: ignore
         try:
             frame = await asyncio.wait_for(queue.get(), timeout=2.0)
         except asyncio.TimeoutError:
-            print(f"[WARN] Timeout waiting for frame from camera {cam_id}")
-            return None
+            logger.warning(f"[WARN] Timeout waiting for frame from camera {cam_id}")
+            return None, None
 
         if not enable_motion:
             return frame
 
         loop = asyncio.get_running_loop()
         subtractor = self.background_subtractors[cam_id]
+        screenshot_path = None
 
-        def detect(frm: np.ndarray) -> np.ndarray:
+        def detect(frm: np.ndarray) -> tuple[ndarray, str | None]:
             """Motion detection, optionally with screenshot saving."""
+            nonlocal screenshot_path
             fg_mask = subtractor.apply(frm)
             kernel = np.ones((5, 5), np.uint8)
             fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
@@ -142,7 +171,7 @@ class CameraManager:
                     continue
                 x, y, w, h = cv2.boundingRect(cnt)
                 cx, cy = x + w // 2, y + h // 2
-                # пока пилим в центр
+                # пока пилим в центр, допилить детекцию по координатам, актуально для Akyvox
                 if (
                         save_screenshot and
                         (center_x - margin_x <= cx <= center_x + margin_x) and
@@ -154,8 +183,9 @@ class CameraManager:
                     save_dir = f"screenshots/camera_{cam_id}/{timestamp[:10]}/"
                     os.makedirs(save_dir, exist_ok=True)
                     filename = os.path.join(save_dir, f"motion_{timestamp}.jpg")
-                    cv2.imwrite(filename, frm)               # celery -> email
-                    print(f"[INFO] Motion detected. Saved: {filename}")
+                    cv2.imwrite(filename, frm)
+                    screenshot_path = filename
+                    logger.info(f"[INFO] Motion detected. Saved: {filename}")
                     self.last_screenshot_times[cam_id] = now
                     screenshot_taken = True
 
@@ -166,7 +196,7 @@ class CameraManager:
                 cv2.putText(processed, "REC", (20, 45), cv2.FONT_HERSHEY_SIMPLEX,
                             1.2, (255, 255, 255), 2)
 
-            return processed
+            return processed, screenshot_path
 
         return await loop.run_in_executor(self.executor, detect, frame)
 
@@ -175,7 +205,7 @@ class CameraManager:
         for cam_id in list(self.cameras.keys()):
             await self._stop_camera_reader(cam_id)
         self.executor.shutdown(wait=True)
-        print("All cameras cleaned up.")
+        logger.info("All cameras cleaned up.")
 
     async def _start_camera_reader(self, cam_id: str, url: str, timeout: int) -> None:
         """Start the background reader task for a single camera.
@@ -202,7 +232,7 @@ class CameraManager:
 
                 frame = await loop.run_in_executor(self.executor, read)
                 if frame is None:
-                    print(f"[WARN] Empty frame from {cam_id}, trying reconnect")
+                    logger.warning(f"[WARN] Empty frame from {cam_id}, trying reconnect")
                     ok = await self._try_reconnect(cam_id)
                     if not ok:
                         await asyncio.sleep(1)
@@ -218,7 +248,7 @@ class CameraManager:
 
         task = asyncio.create_task(reader(), name=f"reader-{cam_id}")
         self.cameras[cam_id]["task"] = task
-        print(f"[INFO] Camera {cam_id} reader started")
+        logger.info(f"[INFO] Camera {cam_id} reader started")
 
     async def _stop_camera_reader(self, cam_id: str) -> None:
         """Stop the reader task and release resources for a specific camera.
@@ -240,7 +270,7 @@ class CameraManager:
                 pass
         if cap:
             await asyncio.get_running_loop().run_in_executor(self.executor, cap.release)
-        print(f"[INFO] Camera {cam_id} reader stopped")
+        logger.info(f"[INFO] Camera {cam_id} reader stopped")
         self.cameras.pop(cam_id, None)
 
     async def _safe_create_capture_with_timeout(self, cam_id: str, url: str, timeout: int):
@@ -257,10 +287,10 @@ class CameraManager:
         try:
             return await asyncio.wait_for(self._create_capture(cam_id, url), timeout=timeout)
         except asyncio.TimeoutError:
-            print(f"[ERROR] Timeout connecting to camera {cam_id}")
+            logger.error(f"[ERROR] Timeout connecting to camera {cam_id}")
             return None
         except Exception as e:
-            print(f"[ERROR] Exception connecting to camera {cam_id}: {e}")
+            logger.error(f"[ERROR] Exception connecting to camera {cam_id}: {e}")
             return None
 
     async def _create_capture(self, cam_id: str, url: str):
@@ -275,7 +305,7 @@ class CameraManager:
         """
         loop = asyncio.get_running_loop()
         def open_cap():
-            print(f"[INFO] Opening camera {cam_id}: {url}")
+            logger.info(f"[INFO] Opening camera {cam_id}: {url}")
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             if not cap.isOpened():
                 cap.release()
@@ -283,7 +313,7 @@ class CameraManager:
             return cap
         cap = await loop.run_in_executor(self.executor, open_cap)
         if cap is None:
-            print(f"[ERROR] cv2.VideoCapture failed for {cam_id}")
+            logger.error(f"[ERROR] cv2.VideoCapture failed for {cam_id}")
         return cap
 
     async def get_current_frame(self, cam_id):
@@ -299,10 +329,10 @@ class CameraManager:
     async def start_continuous_recording(self, cam_id: str):
         """Starts continuous video recording for 30 seconds until stop command."""
         if cam_id in self.recording_flags and self.recording_flags[cam_id]:
-            print(f"[INFO] Registration is already underway for {cam_id}")
+            logger.info(f"[INFO] Registration is already underway for {cam_id}")
             return
         self.recording_flags[cam_id] = True
-        print(f"[INFO] Start continuous recording for {cam_id}")
+        logger.info(f"[INFO] Start continuous recording for {cam_id}")
 
         async def record_loop():
             """
@@ -322,7 +352,7 @@ class CameraManager:
         """Stops the current continuous recording of the camera."""
         if self.recording_flags.get(cam_id):
             self.recording_flags[cam_id] = False
-            print(f"[INFO] Recording stopped for {cam_id}")
+            logger.info(f"[INFO] Recording stopped for {cam_id}")
             task = self.recording_tasks.pop(cam_id, None)
             if task:
                 try:
@@ -330,13 +360,13 @@ class CameraManager:
                 except asyncio.CancelledError:
                     pass
         else:
-            print(f"[INFO] The recording was not made for {cam_id}")
+            logger.info(f"[INFO] The recording was not made for {cam_id}")
 
     async def record_video(self, cam_id: str, duration_sec: int = 10) -> Optional[str]:
         """Records video from the camera for the specified time (in seconds)."""
         cam_data = self.cameras.get(cam_id)
         if not cam_data:
-            print(f"[ERROR] Camera {cam_id} not found")
+            logger.error(f"[ERROR] Camera {cam_id} not found")
             return None
         queue: asyncio.Queue = cam_data["queue"]
         now = datetime.now()
@@ -345,12 +375,12 @@ class CameraManager:
         save_path = os.path.join("recordings", cam_id, f"camera_{cam_id}_{current_stamp}")
         os.makedirs(save_path, exist_ok=True)
         full_path = os.path.join(save_path, filename)
-        print(f"[INFO] Record video started. Saved: {filename}")
+        logger.info(f"[INFO] Record video started. Saved: {filename}")
 
         try:
             frame = await asyncio.wait_for(queue.get(), timeout=5)
         except asyncio.TimeoutError:
-            print(f"[ERROR] No camera footage {cam_id}")
+            logger.error(f"[ERROR] No camera footage {cam_id}")
             return None
 
         height, width = frame.shape[:2]
@@ -379,7 +409,7 @@ class CameraManager:
             await loop.run_in_executor(self.executor, out.release)
 
         await writer()
-        print(f"[INFO] Video saved: {full_path}")
+        logger.info(f"[INFO] Video saved: {full_path}")
         return full_path
 
 
@@ -395,7 +425,7 @@ class CameraManager:
         """
         camera_config_json = Repo.reinit_camera(cam_id)
         if not camera_config_json:
-            print(f"[WARN] No configuration found for camera {cam_id}")
+            logger.warning(f"[WARN] No configuration found for camera {cam_id}")
             return False
         try:
             single_config = json.loads(camera_config_json)
@@ -403,22 +433,22 @@ class CameraManager:
             raise ValueError(f"Error parsing camera configuration: {e}")
 
         if cam_id not in single_config:
-            print(f"[INFO] Camera {cam_id} disabled or missing in DB. Removing from runtime.")
+            logger.info(f"[INFO] Camera {cam_id} disabled or missing in DB. Removing from runtime.")
             await self._stop_camera_reader(cam_id)
             self.camera_configs.pop(cam_id, None)
             self.background_subtractors.pop(cam_id, None)
             return False
 
         if cam_id in self.cameras:
-            print(f"[INFO] Stopping camera {cam_id} before reinitialization...")
+            logger.info(f"[INFO] Stopping camera {cam_id} before reinitialization...")
             await self._stop_camera_reader(cam_id)
 
         self.camera_configs[cam_id] = single_config[cam_id]
         self.background_subtractors[cam_id] = cv2.createBackgroundSubtractorMOG2()
 
-        print(f"[INFO] Reinitializing camera {cam_id}...")
+        logger.info(f"[INFO] Reinitializing camera {cam_id}...")
         await self._start_camera_reader(cam_id, self.camera_configs[cam_id], timeout=5)
-        print(f"[INFO] Camera {cam_id} successfully reinitialized.")
+        logger.info(f"[INFO] Camera {cam_id} successfully reinitialized.")
         return True
 
     async def _try_reconnect(self, cam_id: str, attempts: int = 3, delay: float = 2.0) -> bool:
@@ -437,13 +467,13 @@ class CameraManager:
             return False
 
         for attempt in range(1, attempts + 1):
-            print(f"[INFO] Reconnect {cam_id}: attempt {attempt}/{attempts}")
+            logger.info(f"[INFO] Reconnect {cam_id}: attempt {attempt}/{attempts}")
             cap = await self._create_capture(cam_id, url)
             if cap:
                 await asyncio.get_running_loop().run_in_executor(self.executor, self.cameras[cam_id]['cap'].release)
                 self.cameras[cam_id]['cap'] = cap
-                print(f"[INFO] Camera {cam_id} reconnected")
+                logger.info(f"[INFO] Camera {cam_id} reconnected")
                 return True
             await asyncio.sleep(delay)
-        print(f"[ERROR] Cannot reconnect camera {cam_id}")
+        logger.error(f"[ERROR] Cannot reconnect camera {cam_id}")
         return False

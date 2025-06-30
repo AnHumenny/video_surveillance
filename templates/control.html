@@ -32,7 +32,9 @@
                         <input type="submit" value="Добавить">
                     </form>
                 </div>
-
+                <div style="display: flex; align-items: center;">
+                    <div style="flex-grow: 1; border-bottom: 1px solid black;">&nbsp;</div>
+                </div>
                 <div class="add-camera">
                     <h5>Добавить камеру</h5>
                     <p><i>Example: rtsp://user:password@192.168.1.4:554/h265</i><br>
@@ -50,6 +52,16 @@
                             <label for="screen_cam">Скриншот:</label>
                             <input type="checkbox" name="screen_cam" id="screen_cam" value="1">
                         </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="flex-grow: 1; border-bottom: 2px dashed gray;">&nbsp;</div>
+                        </div>
+                        <div style="display: flex; gap: 20px; align-items: center;">
+                            <h5>Отправить тревожный скриншот  ==> </h5>
+                            <label for="send_email">На почту:</label>
+                            <input type="checkbox" name="send_email" id="send_email" value="1">
+                            <label for="send_tg">В Telegram:</label>
+                            <input type="checkbox" name="send_tg" id="send_tg" value="1">
+                        </div>
                         <input type="submit" value="Добавить">
                     </form>
                     {% if get_flashed_messages(with_categories=True) %}
@@ -60,7 +72,9 @@
                         {% endfor %}
                     {% endif %}
                 </div>
-
+                <div style="display: flex; align-items: center;">
+                    <div style="flex-grow: 1; border-bottom: 1px solid black;">&nbsp;</div>
+                </div>
                 <div class="add-user">
                     <h5>Добавить пользователя</h5>
                     <form method="post" action="{{ url_for('add_new_user') }}" enctype="multipart/form-data">
@@ -134,12 +148,22 @@
                             {% if not row.status_cam %}
                             <img src="{{ url_for('static', filename='image/no.png') }}" title="Детекция движения отключена">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/yes.png') }}" title="Детекция движения включена">
+                            <img src="{{ url_for('static', filename='image/motion.png') }}" title="Детекция движения включена">
                             {% endif %}
                             {% if not row.screen_cam %}
-                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Скриншот отключём">
+                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Скриншот отключён">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/yes.png') }}" title="Скриншот включён">
+                            <img src="{{ url_for('static', filename='image/screen.png') }}" title="Скриншот включён">
+                            {% endif %}
+                            {% if not row.send_email%}
+                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Тревожный по email отключён!">
+                            {% else %}
+                            <img src="{{ url_for('static', filename='image/email.png') }}" title="Тревожный по email включён">
+                            {% endif %}
+                            {% if not row.send_tg%}
+                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Тревожный по tg отключён!">
+                            {% else %}
+                            <img src="{{ url_for('static', filename='image/tg.png') }}" title="Тревожный по tg  включён">
                             {% endif %}
                             <a href="http://{{ host }}:{{ port }}/view/{{ row.id }}">{{ masked_urls[row.id] }}</a>
                             <a href="#" onclick="reinitializeCamera('{{ row.id }}')">
@@ -170,6 +194,10 @@
                     <input type="checkbox" name="motion_detect" id="motion_detect" value="1">
                     <label for="screen_cam">Скриншот:</label>
                     <input type="checkbox" name="screen_cam" id="screen_camera" value="0">
+                    <label for="send_mail">Тревожное по email:</label>
+                    <input type="checkbox" name="send_mail" id="send_mail" value="1">
+                    <label for="send_telegram">Тревожное в Telegram:</label>
+                    <input type="checkbox" name="send_telegram" id="send_telegram" value="0">
                     <div style="text-align: right; margin-top: 10px;">
                         <button type="button" class="btn-cancel" onclick="closeEditPanel()">Отмена</button>
                         <button type="submit" class="btn-save">Сохранить</button>

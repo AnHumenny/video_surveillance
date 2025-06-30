@@ -7,7 +7,12 @@ from schemas.database import DCamera, DUser, DFindCamera
 import os
 import re
 from dotenv import load_dotenv
+
 load_dotenv()
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 db_name = os.getenv("DATABASE")
 db_path = os.path.join(f'{db_name}.db')
@@ -158,18 +163,20 @@ class Repo:
                 return f"Роут {cam_host} успешно обновлен!"
             except IntegrityError as e:
                 await session.rollback()
-                print(f"Ошибка: Роут с адресом {cam_host} не обновился", e)
+                logger.error(f"[ERROR] Ошибка: Роут с адресом {cam_host} не обновился", e)
                 return False
 
             except Exception as e:
                 await session.rollback()
-                print(f"Ошибка: {e}")
+                logger.error(f"[ERROR] Ошибка: {e}")
                 return e
 
 
 
     @classmethod
-    async def edit_camera(cls, ssid, path_to_cam, motion_detection, visible_camera, screen_cam):
+    async def edit_camera(cls, ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
+                          send_mail, send_telegram
+                          ):
         """Edit path to camera.
 
             Args:
@@ -179,6 +186,8 @@ class Repo:
                 motion_detection: bool
                 visible_camera: bool
                 screen_cam: bool
+                send_mail: bool
+                send_telegram: bool
 
             Returns:
                 200 if ok
@@ -190,19 +199,21 @@ class Repo:
                                           ).values(path_to_cam=path_to_cam,
                                                    status_cam=motion_detection,
                                                    visible_cam=visible_camera,
-                                                   screen_cam=screen_cam
+                                                   screen_cam=screen_cam,
+                                                   send_email=send_mail,
+                                                   send_tg = send_telegram
                                                    )
                 await session.execute(q)
                 await session.commit()
                 return f"Камера {ssid} успешно обновлена!"
             except IntegrityError as e:
                 await session.rollback()
-                print(f"Ошибка: Камера с адресом {ssid} не обновилась", e)
+                logger.error(f"[ERROR] Ошибка: Камера с адресом {ssid} не обновилась", e)
                 return False
 
             except Exception as e:
                 await session.rollback()
-                print(f"Ошибка: {e}")
+                logger.error(f"[ERROR] Ошибка: {e}")
                 return e
 
 
@@ -223,7 +234,7 @@ class Repo:
                 cameras = result.scalars().all()
                 return cameras
             except Exception as e:
-                print(f"Ошибка: {e}")
+                logger.error(f"[ERROR] Ошибка: {e}")
                 raise e
 
     @classmethod
@@ -235,15 +246,15 @@ class Repo:
         async with new_session() as session:
             try:
                 q = Select(
-                    DCamera.status_cam, DCamera.screen_cam).where(
+                    DCamera.status_cam, DCamera.screen_cam, DCamera.send_email, DCamera.send_tg).where(
                     DCamera.id == ssid, DCamera.visible_cam == True)
                 result = await session.execute(q)
                 row = result.first()
                 if row:
-                    return {"status_cam": row[0], "screen": row[1]}
+                    return {"status_cam": row[0], "screen": row[1], "send_email": row[2], "send_tg": row[3]}
                 return {"status_cam": False, "screen": False}
             except IntegrityError as e:
-                print(f"[DB ERROR] {e}")
+                logger.error(f"[ERROR] [DB ERROR] {e}")
                 return {"status_cam": False, "screen": False}
 
     @classmethod
@@ -266,12 +277,12 @@ class Repo:
                 users = result.all()
                 return users
             except Exception as e:
-                print(f"Ошибка: {e}")
+                logger.error(f"[ERROR] Ошибка: {e}")
                 raise e
 
 
     @classmethod
-    async def add_new_cam(cls, new_cam, motion_detection, visible_cam, screen_cam):
+    async def add_new_cam(cls, new_cam, motion_detection, visible_cam, screen_cam, send_email, send_tg):
         """Inserts a new camera into the DCamera table.
 
             Args:
@@ -280,29 +291,33 @@ class Repo:
 
             Raises:
                 Exception: If insertion fails, with rollback performed.
-                :param visible_cam:
                 :param path to new_cam: False or True (default == True)
                 :param motion_detection: False or True (motion detection)
-                :param screen_cam: False or True (motion screenshot)
+                :param screen_cam: False or True
+                :param send_email: False or True
+                :param visible_cam: False or True
+                :param send_tg: False or True
             """
         async with new_session() as session:
-            print("добавляем в репах", (new_cam, int(motion_detection), int(visible_cam), int(screen_cam)))
             async with session.begin():
                 try:
                     q = insert(DCamera).values(path_to_cam=new_cam,
                                                status_cam=motion_detection,
                                                visible_cam=visible_cam,
-                                               screen_cam=screen_cam)
+                                               screen_cam=screen_cam,
+                                               send_email=send_email,
+                                               send_tg=send_tg,
+                                               )
                     await session.execute(q)
                     await session.commit()
                     return f"Камера {new_cam} успешно добавлена!"
                 except IntegrityError as e:
                     await session.rollback()
-                    print(f"Ошибка: Камера с адресом {new_cam} уже существует", e)
+                    logger.error(f"[ERROR] Ошибка: Камера с адресом {new_cam} уже существует", e)
                     return False
                 except Exception as e:
                     await session.rollback()
-                    print(f"Ошибка: {e}")
+                    logger.error(f"[ERROR] Ошибка: {e}")
                     return e
 
     @classmethod
@@ -326,12 +341,12 @@ class Repo:
                     await session.commit()
                     return f"Пользователь {user} успешно добавлена!"
                 except IntegrityError as e:
-                    print(f"Ошибка: {e}")
+                    logger.error(f"[ERROR] Ошибка: {e}")
                     await session.rollback()
                     return False
                 except Exception as e:
                     await session.rollback()
-                    print(f"Ошибка: {e}")
+                    logger.error(f"[ERROR] Ошибка: {e}")
                     return e
 
 
@@ -366,7 +381,7 @@ class Repo:
                 await session.commit()
                 return f"Камера с идентификатором {ssid} успешно удалёна!"
             except (ValueError, NoResultFound, IntegrityError, SQLAlchemyError) as e:
-                print("error", e)
+                logger.error("[ERROR]", e)
                 await session.rollback()
                 return False
 
@@ -401,7 +416,7 @@ class Repo:
                 await session.commit()
                 return f"Пользователь с идентификатором {ssid} успешно удалёна!"
             except (ValueError, NoResultFound, IntegrityError, SQLAlchemyError) as e:
-                print("error", e)
+                logger.error("[ERROR]", e)
                 await session.rollback()
                 return False
 
@@ -420,7 +435,7 @@ class Repo:
             conn.close()
             return json.dumps(json_result, ensure_ascii=False)
         except sqlite3.Error as e:
-            print(f"Ошибка базы данных: {e}")
+            logger.error(f"[ERROR] Ошибка базы данных: {e}")
             return json.dumps({})
 
     @staticmethod
@@ -443,7 +458,7 @@ class Repo:
                     }, ensure_ascii=False)
                 return json.dumps({})
         except sqlite3.Error as e:
-            print(f"Ошибка базы данных: {e}")
+            logger.error(f"[ERROR] Ошибка базы данных: {e}")
             return json.dumps({})
 
     @classmethod
