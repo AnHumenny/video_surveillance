@@ -39,11 +39,21 @@ SIZE_VIDEO=1280,720 (720,480  etc...)
 DATABASE="имя базы данных"
 ADMIN="имя пользователя" (первичная установка)
 PASSWORD="пароль" (первичная установка)
-SECRET_KEY="secret_key"
+SECRET_KEY=secret_key
 HOST="localhost"
 PORT="port"
 CAM_HOST="192.168.0.1" (первичный маршрут)
 SUBNET_MASK="24" (первичная маска)
+TOKEN_TIME_AUTHORIZATION=(время действия токена авторизации(hours))
+
+SENDER_EMAIL="отправитель"
+SENDER_PASSWORD="код приложения отправителя"
+SMTP_PORT=587
+SMTP_SERVER="smtp.gmail.com"
+RECIPIENT_EMAIL="получатель"
+
+TELEGRAM_BOT_TOKEN="токен ТГ-бота"
+TELEGRAM_CHAT_ID="чат получателя"
 ```
 
 Из корневой директории приложения

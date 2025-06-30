@@ -1,3 +1,4 @@
+import logging
 import os
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
@@ -15,8 +16,12 @@ from functools import wraps
 import jwt
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
+
+import tasks
 from schemas.repository import Repo
 from camera_manager import CameraManager
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -37,6 +42,7 @@ async def setup_camera_manager():
         return
     await camera_manager.initialize()
 
+
 @app.after_serving
 async def shutdown_camera_manager():
     global camera_manager
@@ -50,7 +56,7 @@ async def generate_frames(cap, cam_id):
         try:
             ret, frame = cap.read()
             if not ret or frame is None:
-                print(f"The frame is discarded for the camera {cam_id}")
+                logger.error(f"The frame is discarded for the camera {cam_id}")
                 break
             size_video = os.getenv("SIZE_VIDEO")
             if size_video:
@@ -60,7 +66,7 @@ async def generate_frames(cap, cam_id):
             frame = cv2.resize(frame, (width, height))
             ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             if not ret:
-                print(f"Frame encoding error for camera {cam_id}")
+                logger.error(f"Frame encoding error for camera {cam_id}")
                 continue
 
             frame_data = buffer.tobytes()
@@ -69,7 +75,7 @@ async def generate_frames(cap, cam_id):
             await asyncio.sleep(0.03)
 
         except Exception as e:
-            print(f"Frame encoding error for camera {cam_id}: {e}")
+            logger.error(f"Frame encoding error for camera {cam_id}: {e}")
             break
 
 
@@ -78,7 +84,7 @@ def generate_token(username, status):
     payload = {
         'user': username,
         'status': status,
-        'exp': datetime.now(datetime.UTC) + timedelta(hours=1)
+        'exp': datetime.now(datetime.UTC) + timedelta(hours=int(os.getenv("TOKEN_TIME_AUTHORIZATION")))
     }
     return jwt.encode(payload, os.getenv("SECRET_KEY"), algorithm='HS256')
 
@@ -157,36 +163,52 @@ async def video_feed(cam_id):
         config = await Repo.select_cam_config(cam_id)
         enable_motion = config["status_cam"]
         save_screenshot = config["screen"]
+        send_email = config["send_email"]
+        send_tg = config["send_tg"]
 
         empty_in_row = 0
         max_empty = 10
 
         try:
             while True:
-                frame = await camera_manager.get_frame_with_motion_detection(
-                    cam_id, enable_motion, save_screenshot
-                )
+                if enable_motion:
+                    frame, screenshot_path = await camera_manager.get_frame_with_motion_detection(
+                        cam_id, enable_motion=True, save_screenshot=save_screenshot
+                    )
+                else:
+                    frame = await camera_manager.get_frame_without_motion_detection(cam_id)
+                    screenshot_path = None
+
                 if frame is None:
                     empty_in_row += 1
                     if empty_in_row >= max_empty:
-                        print(f"[ERROR] Camera {cam_id} is not available >{max_empty} empty frames")
+                        logger.error(f"[ERROR] Camera {cam_id} is not available >{max_empty} empty frames")
                         break
                     await asyncio.sleep(0.05)
                     continue
 
                 empty_in_row = 0
+
+                if send_email and screenshot_path:
+                    tasks.send_screenshot_email.delay(cam_id, screenshot_path)
+
+                if send_tg and screenshot_path:                 # добавить бота за паролем. Или частичное управление интерфейсом панели управления с телеги
+                    tasks.send_telegram_notification.delay(cam_id, screenshot_path)
+
                 width, height = map(int, os.getenv("SIZE_VIDEO").split(","))
                 frame = cv2.resize(frame, (width, height))
                 ret, buf = cv2.imencode('.jpg', frame)
                 if not ret:
-                    print(f"[ERROR] JPEG encoding failed for camera {cam_id}")
+                    logger.error(f"[ERROR] JPEG encoding failed for camera {cam_id}")
                     continue
 
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
                 await asyncio.sleep(0.033)
+
         except Exception as e:
-            print(f"[ERROR] Streaming error for camera {cam_id}: {e}")
+            logger.error(f"[ERROR] Streaming error for camera {cam_id}: {e}")
+
     return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
@@ -236,11 +258,13 @@ async def scan_network_for_rtsp():
                         'ip': host,
                         'port': port,
                     })
-                    print(f"[DEBUG] Found potential RTSP device at {host}:{port}")
+                    logger.info(f"[INFO] Found potential RTSP device at {host}:{port}")
     return jsonify(rtsp_devices)
+
 
 def mask_rtsp_credentials(url: str) -> str:
     return re.sub(r'//(.*?):(.*?)@', r'//****:****@', url)
+
 
 @app.route('/control')
 @token_required
@@ -257,6 +281,7 @@ async def control():
                                  host=user_host, port=user_port, messages=messages, status='admin',
                                  current_range=current_range, masked_urls=masked_urls )
 
+
 async def list_all_cameras():
     """list of all cameras."""
     q = await Repo.select_all_cam()
@@ -266,6 +291,7 @@ async def list_all_cameras():
 
 
 @app.route('/delete_camera/<int:ssid>', methods=['GET', 'POST'])
+@token_required
 async def delete_camera(ssid):
     """deleting camera by id"""
     success = await Repo.drop_camera(ssid)
@@ -275,6 +301,7 @@ async def delete_camera(ssid):
 
 
 @app.route('/delete_user/<int:ssid>', methods=['GET'])
+@token_required
 async def delete_user(ssid):
     """deleting a user by id."""
     if ssid == 1:
@@ -288,6 +315,7 @@ async def delete_user(ssid):
 
 
 @app.route('/add_camera', methods=['POST', 'GET'])
+@token_required
 async def add_new_camera():
     """add new camera."""
     form_data = await request.form
@@ -295,6 +323,8 @@ async def add_new_camera():
     motion_detection = 1 if form_data.get("motion_detection") else 0
     visible_cam = 1 if form_data.get("visible_cam") else 0
     screen_cam = 1 if form_data.get("screen_cam") else 0
+    send_email = 1 if form_data.get("send_email") else 0
+    send_tg = 1 if form_data.get("send_tg") else 0
     if not new_cam:
         await flash("Camera URL not specified!", "error")
         return redirect(url_for("control"))
@@ -302,7 +332,8 @@ async def add_new_camera():
     if query is False:
         await flash("Error: Invalid RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    q = await Repo.add_new_cam(new_cam, int(motion_detection), int(visible_cam), int(screen_cam))
+    q = await Repo.add_new_cam(new_cam, int(motion_detection), int(visible_cam), int(screen_cam),
+                               int(send_email), int(send_tg))
     if q is False:
         await flash("Camera not added: such URL already exists or an error occurred!",
                     "camera_error")
@@ -320,6 +351,7 @@ async def select_all_users():
 PASSWORD_PATTERN = r"^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=\S+$).{8,20}$"
 
 @app.route('/add_user', methods=['POST', 'GET'])
+@token_required
 async def add_new_user():
     """adding the new user."""
     form_data = await request.form
@@ -339,6 +371,7 @@ async def add_new_user():
 
 
 @app.route('/edit_cam', methods=['POST', 'GET'])
+@token_required
 async def edit_cam():
     """editing the path to camera."""
     form_data = await request.form
@@ -347,11 +380,14 @@ async def edit_cam():
     motion_detection = 1 if form_data.get("motion_detect") else 0
     visible_camera = 1 if form_data.get("visible_camera") else 0
     screen_cam = 1 if form_data.get("screen_cam") else 0
+    send_mail = 1 if form_data.get("send_mail") else 0
+    send_telegram = 1 if form_data.get("send_telegram") else 0
     query = await check_rtsp(path_to_cam)
     if query is False:
         await flash("Error: Incorrect RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera, screen_cam)
+    await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
+                           send_mail, send_telegram)
     await flash("User added successfully!", "user_success")
     return redirect(url_for("control"))
 
@@ -381,9 +417,9 @@ async def index():
                 )
                 return response
         except jwt.ExpiredSignatureError:
-            print("Token expired")
+            logger.info("Token expired")
         except jwt.InvalidTokenError as e:
-            print(f"Invalid token: {str(e)}")
+            logger.error(f"Invalid token: {str(e)}")
     return redirect(url_for('login'))
 
 
@@ -406,7 +442,7 @@ async def login():
             {
                 'username': username,
                 'status': status,
-                'exp': datetime.now(timezone.utc) + timedelta(hours=1)
+                'exp': datetime.now(timezone.utc) + timedelta(hours=int(os.getenv("TOKEN_TIME_AUTHORIZATION")))
             },
             app.config['SECRET_KEY'],
             algorithm='HS256'
@@ -503,7 +539,6 @@ async def start_recording(cam_id):
     """short entry (10 sec.)"""
     if camera_manager is None:
         return "CameraManager not initialized", 500
-    print("cam_id", cam_id)
     path = await camera_manager.record_video(cam_id, duration_sec=10)
     if not path:
         return jsonify({"status": "error", "message": "Failed to record video"}), 500
@@ -526,6 +561,17 @@ async def stop_recording_loop(cam_id):
     return jsonify({"status": "recording_stopped"})
 
 
+@app.route("/health_server", methods=["POST"])
+async def health_server():
+    if request.content_type == 'application/json':
+        data = await request.get_json()
+    else:
+        data = await request.form
+    subject = data.get("subject", "I`m server.")
+    task = tasks.health_server.delay(subject)
+    return jsonify({"task_id": task.id}, "success")
+
+
 async def cleanup():
     """Clearing resources on completion"""
     await camera_manager.cleanup()
@@ -539,11 +585,11 @@ async def main(host: str, port: int, debug: bool = False):
     if success:
         await camera_manager.initialize()
     else:
-        print("Cameras not initialized, app continues to launch.")
+        logger.info("Cameras not initialized, app continues to launch.")
     try:
         await serve(app, config)
     except asyncio.CancelledError:
-        print("Server interrupted, shutting down...")
+        logger.error("Server interrupted, shutting down...")
         await cleanup()
 
 

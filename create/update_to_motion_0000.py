@@ -2,8 +2,11 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+import logging
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 db_path = os.path.join(base_dir, f'{os.getenv("DATABASE")}.db')
@@ -12,20 +15,20 @@ new_session = async_sessionmaker(engine, expire_on_commit=False)
 
 from sqlalchemy import text
 
-async def add_column_screen_cam_to_camera():
+async def add_column_to_camera():
     async with engine.begin() as conn:
         result = await conn.execute(
             text("PRAGMA table_info(_camera);")
         )
-        columns = [row[1] for row in result]
+        columns = [row[1] for row in result.fetchall()]
 
-        if 'new_column_name' not in columns:
+        if 'screen_cam' not in columns:
             await conn.execute(
                 text("ALTER TABLE _camera ADD COLUMN screen_cam INTEGER DEFAULT 0")
             )
-            print("Column added.")
+            logger.info("[INFO]Column added.")
         else:
-            print("The column already exists.")
+            logger.error("[ERROR] The column already exists.")
 
 if __name__ == "__main__":
-    asyncio.run(add_column_screen_cam_to_camera())
+    asyncio.run(add_column_to_camera())

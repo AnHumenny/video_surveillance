@@ -49,3 +49,8 @@ Thumbs.db
 *.yml
 *.yaml
 *.ini
+
+# media
+*.avi
+*.mpeg
+*.jpg
