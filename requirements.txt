@@ -13,3 +13,4 @@ redis==6.2.0
 aiosmtplib==4.0.1
 email_validator==2.2.0
 httpx==0.28.1
+ffmpeg-python~=0.2.0

@@ -325,5 +325,20 @@
     border-radius: 8px;
     box-sizing: border-box;
   }
+  .coordinate-row {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    flex-wrap: nowrap;
+  }
 
+  .coordinate-row label {
+    width: 120px;
+    font-weight: bold;
+  }
+
+  .coordinate-row input[type="text"] {
+    width: 120px;
+    padding: 25px;
+  }
 </style>

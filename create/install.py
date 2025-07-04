@@ -13,9 +13,7 @@ base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 db_path = os.path.join(base_dir, f'{os.getenv("DATABASE")}.db')
 engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=True)
 new_session = async_sessionmaker(engine, expire_on_commit=False)
-import logging
-
-logger = logging.getLogger(__name__)
+from logs.logging_config import logger
 
 password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()
 user_info = {
@@ -33,7 +31,7 @@ async def create_db():
     """Create a database and tables (if they do not exist)"""
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.create_all)
-    logger.info("[INFO] Таблицы успешно созданы или уже существуют.")
+    logger.info("[INFO] Tables successfully added or already exists!")
 
 
 async def insert_into_user():
@@ -43,10 +41,10 @@ async def insert_into_user():
             stmt = select(DUser).where(DUser.user == user_info["user"])
             result = await session.execute(stmt)
             if result.scalar():
-                logger.error(f"[ERROR] Пользователь {user_info['user']} уже существует.")
+                logger.error(f"[ERROR] User {user_info['user']} already exist!")
                 return
             session.add(DUser(**user_info))
-            logger.info(f"[INFO] Пользователь {user_info['user']} добавлен!")
+            logger.info(f"[INFO] User {user_info['user']} added!")
 
 
 async def insert_into_find_cam():
@@ -56,10 +54,10 @@ async def insert_into_find_cam():
             stmt = select(DFindCamera).where(DFindCamera.cam_host == find_cam_info["cam_host"])
             result = await session.execute(stmt)
             if result.scalar():
-                logger.error(f"[ERROR] Маршрут {find_cam_info['cam_host']} уже существует.")
+                logger.error(f"[ERROR] Route {find_cam_info['cam_host']} already exist.")
                 return
             session.add(DFindCamera(**find_cam_info))
-            logger.info(f"[INFO] Маршрут {find_cam_info} добавлен!")
+            logger.info(f"[INFO] Route {find_cam_info} added!")
 
 
 if __name__ == "__main__":

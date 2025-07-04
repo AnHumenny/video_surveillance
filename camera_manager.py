@@ -1,6 +1,5 @@
 import json
 import asyncio
-import logging
 import os
 from datetime import datetime
 import time
@@ -10,8 +9,7 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from numpy import ndarray
 from schemas.repository import Repo
-
-logger = logging.getLogger(__name__)
+from logs.logging_config import logger
 
 class CameraManager:
     """Asynchronous manager that maintains exactly **one** VideoCapture per physical
@@ -113,9 +111,12 @@ class CameraManager:
             logger.warning(f"[WARN] Timeout waiting for frame from camera {cam_id}")
             return None
 
-
     async def get_frame_with_motion_detection(
-            self, cam_id: str, enable_motion: bool, save_screenshot: bool = False
+            self,
+            cam_id: str,
+            enable_motion: bool,
+            save_screenshot: bool = False,
+            points: Optional[list[tuple[int, int]]] = None
     ) -> Tuple[Optional[np.ndarray], Optional[str]]:
         """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
 
@@ -147,7 +148,7 @@ class CameraManager:
         screenshot_path = None
 
         def detect(frm: np.ndarray) -> tuple[ndarray, str | None]:
-            """Motion detection, optionally with screenshot saving."""
+            """Motion detection, optionally with screenshot saving. Alarm monitoring zone by coordinates"""
             nonlocal screenshot_path
             fg_mask = subtractor.apply(frm)
             kernel = np.ones((5, 5), np.uint8)
@@ -155,27 +156,25 @@ class CameraManager:
             fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            height, width = frm.shape[:2]
-            center_x, center_y = width // 2, height // 2
-            margin_x = width // 6
-            margin_y = height // 6
-
             processed = frm.copy()
             screenshot_taken = False
 
             now = time.time()
             last_time = self.last_screenshot_times.get(cam_id, 0)
 
-            for cnt in contours:
+            zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
+            zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
+
+            for cnt in contours:                      # добавить размер обьекта на детектор движение?
                 if cv2.contourArea(cnt) < 500:
                     continue
                 x, y, w, h = cv2.boundingRect(cnt)
                 cx, cy = x + w // 2, y + h // 2
-                # пока пилим в центр, допилить детекцию по координатам, актуально для Akyvox
+
                 if (
                         save_screenshot and
-                        (center_x - margin_x <= cx <= center_x + margin_x) and
-                        (center_y - margin_y <= cy <= center_y + margin_y) and
+                        (zone_x1 <= cx <= zone_x2) and
+                        (zone_y1 <= cy <= zone_y2) and
                         not screenshot_taken and
                         (now - last_time) > 5
                 ):
@@ -191,10 +190,12 @@ class CameraManager:
 
                 cv2.rectangle(processed, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-            if self.recording_flags.get(cam_id, False):
-                cv2.rectangle(processed, (10, 10), (150, 60), (0, 0, 255), -1)
-                cv2.putText(processed, "REC", (20, 45), cv2.FONT_HERSHEY_SIMPLEX,
-                            1.2, (255, 255, 255), 2)
+            cv2.rectangle(processed, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 0, 255), 2)
+            cv2.putText(processed, "Zone", (zone_x1, max(0, zone_y1 - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+            if self.recording_flags.get(cam_id):
+                cv2.putText(processed, "REC", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
 
             return processed, screenshot_path
 
