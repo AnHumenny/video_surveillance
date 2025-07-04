@@ -3,11 +3,9 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import text
-import logging
+from logs.logging_config import logger
 
 load_dotenv()
-
-logger = logging.getLogger(__name__)
 
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 db_path = os.path.join(base_dir, f'{os.getenv("DATABASE")}.db')

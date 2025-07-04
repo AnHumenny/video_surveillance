@@ -45,10 +45,12 @@
                             <input type="text" name="new_cam" id="new_cam" required>
                         </div>
                         <div style="display: flex; gap: 20px; align-items: center;">
-                            <label for="motion_detection">Детекция движения:</label>
-                            <input type="checkbox" name="motion_detection" id="motion_detection" value="1">
                             <label for="visible_cam">Видимость камеры:</label>
                             <input type="checkbox" name="visible_cam" id="visible_cam" value="1">
+
+                            <label for="motion_detection">Детекция движения:</label>
+                            <input type="checkbox" name="motion_detection" id="motion_detection" value="1">
+
                             <label for="screen_cam">Скриншот:</label>
                             <input type="checkbox" name="screen_cam" id="screen_cam" value="1">
                         </div>
@@ -168,89 +170,95 @@
                             <a href="http://{{ host }}:{{ port }}/view/{{ row.id }}">{{ masked_urls[row.id] }}</a>
                             <a href="#" onclick="reinitializeCamera('{{ row.id }}')">
                                 <img src="{{ url_for('static', filename='image/update.png') }}" alt="Переинициализировать" title="Переинициализировать">
-                                 </a> &nbsp;
-                            <a href="#" onclick="openEditPanel('{{ row.id }}', '{{ row.path_to_cam }}', '{{ url_for('edit_cam', ssid=row.id) }}')">
-                                <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать" title="Редактировать маршрут"></a> &nbsp;
+                            </a> &nbsp;
+                            <a href="#" onclick="openEditPanel(
+                                '{{ row.id }}',
+                                '{{ row.path_to_cam }}',
+                                '{{ row.coordinate_x1 }}',
+                                '{{ row.coordinate_x2 }}',
+                                '{{ row.coordinate_y1 }}',
+                                '{{ row.coordinate_y2 }}',
+                                '{{ url_for('edit_cam', ssid=row.id) }}'
+                            )">
+                                <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать" title="Редактировать маршрут">
+                            </a>
                             <a href="{{ url_for('delete_camera', ssid=row.id) }}">
                                 <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить" title="Удалить"></a>
-
-                        </div>
-                    {% endfor %}
+                            </div>
+                        {% endfor %}
+                    </div>
                 </div>
-            </div>
         </div>
 
         <div id="editPanel" class="slide-panel">
             <div class="panel-content">
                 <h5>Редактировать маршрут камеры</h5>
                 <form id="editForm" method="POST">
+                    <div class="coordinate-row">
+                        <label for="coordinate_x1">Верхний левый:</label>
+                            <input type="text" id="coordinate_x1" name="coordinate_x1" required pattern="^\d{1,4},\s?\d{1,4}$"
+                                   title="Введите два числа, разделённых запятой, например: 245, 124" >
+                        <label for="coordinate_x2">Верхний правый:</label>
+                             <input type="text" id="coordinate_x2" name="coordinate_x2" required pattern="^\d{1,4},\s?\d{1,4}$"
+                                   title="Введите два числа, разделённых запятой, например: 245, 224" >
+                        <label for="coordinate_y1">Нижний левый:</label>
+                             <input type="text" id="coordinate_y1" name="coordinate_y1" required pattern="^\d{1,4},\s?\d{1,4}$"
+                                    title="Введите два числа, разделённых запятой, например: 335, 200" >
+                        <label for="coordinate_y2">Нижний правый:</label>
+                            <input type="text" id="coordinate_y2" name="coordinate_y2" required pattern="^\d{1,4},\s?\d{1,4}$"
+                                   title="Введите два числа, разделённых запятой, например: 435, 200" >
+                    </div>
                     <label for="cameraId">ID камеры:</label>
                     <input type="text" id="cameraId" name="cameraId" readonly>
                     <label for="cameraPath">Маршрут камеры:</label>
                     <input type="text" id="cameraPath" name="cameraPath" required>
                     <label for="motion_detection">Видимость камеры:</label>
-                    <input type="checkbox" name="visible_camera" id="visible_camera" value="0">
+                    <input type="checkbox" name="visible_camera" id="visible_camera" readonly checked onclick="return false">
                     <label for="motion_detection">Детекция движения:</label>
-                    <input type="checkbox" name="motion_detect" id="motion_detect" value="1">
+                    <input type="checkbox" name="motion_detect" id="motion_detect" value="motion_detect">
                     <label for="screen_cam">Скриншот:</label>
-                    <input type="checkbox" name="screen_cam" id="screen_camera" value="0">
+                    <input type="checkbox" name="screen_cam" id="screen_camera" value="screen_camera">
                     <label for="send_mail">Тревожное по email:</label>
-                    <input type="checkbox" name="send_mail" id="send_mail" value="1">
+                    <input type="checkbox" name="send_mail" id="send_mail" value="send_mail">
                     <label for="send_telegram">Тревожное в Telegram:</label>
-                    <input type="checkbox" name="send_telegram" id="send_telegram" value="0">
+                    <input type="checkbox" name="send_telegram" id="send_telegram" value="send_telegram">
                     <div style="text-align: right; margin-top: 10px;">
                         <button type="button" class="btn-cancel" onclick="closeEditPanel()">Отмена</button>
                         <button type="submit" class="btn-save">Сохранить</button>
                     </div>
                 </form>
-                {% if category in ['cam_true', 'rtsp_error'] %}
-                                <p class="message-{{ category }}">{{ message }}</p>
-                            {% endif %}
+                    {% if category in ['cam_true', 'rtsp_error'] %}
+                        <p class="message-{{ category }}">{{ message }}</p>
+                    {% endif %}
+                </div>
             </div>
-        </div>
-    {% endif %}
-</div>
+        {% endif %}
+    </div>
 
 <script>
-    async function openEditPanel(id, path, endpoint) {
-        const panel = document.getElementById('editPanel');
-        const form = document.getElementById('editForm');
-        const idInput = document.getElementById('cameraId');
-        const pathInput = document.getElementById('cameraPath');
+    async function openEditPanel(id, path, coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2,
+        endpoint) {
+    const panel = document.getElementById('editPanel');
+    const form = document.getElementById('editForm');
+    const idInput = document.getElementById('cameraId');
+    const pathInput = document.getElementById('cameraPath');
 
-        idInput.value = id;
-        pathInput.value = path;
-        form.action = endpoint;
-        panel.classList.add('open');
-    }
+    const coordX1Input = document.getElementById('coordinate_x1');
+    const coordX2Input = document.getElementById('coordinate_x2');
+    const coordY1Input = document.getElementById('coordinate_y1');
+    const coordY2Input = document.getElementById('coordinate_y2');
 
-    function closeEditPanel() {
-        const panel = document.getElementById('editPanel');
-        panel.classList.remove('open');
-    }
+    idInput.value = id;
+    pathInput.value = path;
+    form.action = endpoint;
 
-    document.getElementById('editForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const formData = new FormData(form);
+    coordX1Input.value = coordinate_x1 || '0, 0';
+    coordX2Input.value = coordinate_x2 || '0, 0';
+    coordY1Input.value = coordinate_y1 || '0, 0';
+    coordY2Input.value = coordinate_y2 || '0, 0';
 
-        try {
-            const response = await fetch(form.action, {
-                method: 'POST',
-                body: formData
-            });
-            if (response.ok) {
-                alert('Камера успешно обновлена!');
-                closeEditPanel();
-                window.location.reload();
-            } else {
-                alert('Ошибка при обновлении камеры.');
-            }
-        } catch (error) {
-            console.error('Ошибка:', error);
-            alert('Произошла ошибка при отправке данных.');
-        }
-    });
+    panel.classList.add('open');
+}
 </script>
 
 <script>

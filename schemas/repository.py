@@ -1,18 +1,13 @@
 import sqlite3
 import json
+from typing import Any
 from sqlalchemy import select, insert, delete, and_, update, Select
 from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from schemas.database import DCamera, DUser, DFindCamera
 import os
 import re
-from dotenv import load_dotenv
-
-load_dotenv()
-
-import logging
-
-logger = logging.getLogger(__name__)
+from logs.logging_config import logger
 
 db_name = os.getenv("DATABASE")
 db_path = os.path.join(f'{db_name}.db')
@@ -175,7 +170,7 @@ class Repo:
 
     @classmethod
     async def edit_camera(cls, ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
-                          send_mail, send_telegram
+                          send_mail, send_telegram, coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2
                           ):
         """Edit path to camera.
 
@@ -188,6 +183,10 @@ class Repo:
                 screen_cam: bool
                 send_mail: bool
                 send_telegram: bool
+                coordinate_x1: str  (a.e. 224, 100)
+                coordinate_x2: str  (a.e. 224, 200)
+                coordinate_y1: str  (a.e. 300, 100)
+                coordinate_y2: str  (a.e. 400, 100)
 
             Returns:
                 200 if ok
@@ -201,7 +200,11 @@ class Repo:
                                                    visible_cam=visible_camera,
                                                    screen_cam=screen_cam,
                                                    send_email=send_mail,
-                                                   send_tg = send_telegram
+                                                   send_tg=send_telegram,
+                                                   coordinate_x1=coordinate_x1,
+                                                   coordinate_x2=coordinate_x2,
+                                                   coordinate_y1=coordinate_y1,
+                                                   coordinate_y2=coordinate_y2,
                                                    )
                 await session.execute(q)
                 await session.commit()
@@ -219,14 +222,17 @@ class Repo:
 
     @classmethod
     async def select_all_cam(cls):
-        """Select all cameras from database.
+        """Select all cameras from the database.
 
-            Args:
-                cls: Class reference (unused).
+        Args:
+            cls: Class reference.
 
-            Raises:
-                Exception: If insertion fails, with rollback performed.
-            """
+        Returns:
+             List of DCamera instances.
+
+        Raises:
+            Exception: If database query fails.
+        """
         async with new_session() as session:
             try:
                 q = select(DCamera)
@@ -478,3 +484,35 @@ class Repo:
                     return True
                 except ValueError as e:
                     return e
+
+    @classmethod
+    async def select_coordinates_by_id(cls, cam_id: int) -> list[Any] | list[tuple[int, ...]]:
+        """Get alarm zone coordinates by camera ID.
+
+            Args:
+                cam_id (int): Camera ID.
+
+            Returns:
+                list[tuple(int, int)]: List of tuples of coordinates in the form (x, y), for example:
+                [(230, 440), (485, 440), (230, 575), (485, 575)]
+        """
+        async with new_session() as session:
+            try:
+                q = select(
+                    DCamera.coordinate_x1, DCamera.coordinate_x2,
+                    DCamera.coordinate_y1, DCamera.coordinate_y2
+                ).where(DCamera.id == cam_id)
+                result = await session.execute(q)
+                row = result.first()
+                if row and all(row):
+                    def parse(coord_str):
+                        return tuple(map(int, coord_str.split(',')))
+                    x1 = parse(row[0])
+                    x2 = parse(row[1])
+                    y1 = parse(row[2])
+                    y2 = parse(row[3])
+                    return [x1, x2, y1, y2]
+                return []
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to fetch coordinates: {e}")
+                return []

@@ -72,10 +72,11 @@ def send_screenshot_email(cam_id: str, screenshot_path: str):
         return f"Error sending screenshot: {e}"
 
 
+count = 1
+
 @celery.task(name="tasks.send_telegram_photo")
 def send_telegram_notification(cam_id: str, screenshot_path: str) -> str:
-    from dotenv import load_dotenv
-    load_dotenv()
+    global count
 
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -85,18 +86,18 @@ def send_telegram_notification(cam_id: str, screenshot_path: str) -> str:
         return "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID"
 
     url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-    caption = f"Движение зафиксировано на камере {cam_id}"
-
+    caption = f"Движение зафиксировано на камере {cam_id} \nКоличество объектов: {count}"
     try:
         with open(screenshot_path, "rb") as photo_file:
             files = {"photo": photo_file}
             data = {
                 "chat_id": chat_id,
-                "caption": caption
+                "caption": caption,
             }
 
-            response = httpx.post(url, data=data, files=files, timeout=10)
-            logger.info(f"[TASK] Telegram sendPhoto response: {response.status_code}, {response.text}")
+            response = httpx.post(url, data=data, files=files, timeout=1)
+            logger.info(f"[TASK] Telegram sendPhoto response: {response.status_code}")
+            count += 1
 
             if response.status_code == 200:
                 return "Photo sent successfully"
@@ -104,5 +105,5 @@ def send_telegram_notification(cam_id: str, screenshot_path: str) -> str:
                 return f"Failed to send photo: {response.status_code}, {response.text}"
 
     except Exception as e:
-        logger.info(f"[TASK] Ошибка отправки фото: {e}")
+        logger.info(f"[TASK] Error sending photo: {e}")
         return f"Exception during Telegram sendPhoto: {e}"

@@ -1,4 +1,3 @@
-import logging
 import os
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
@@ -16,12 +15,10 @@ from functools import wraps
 import jwt
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
-
 import tasks
 from schemas.repository import Repo
 from camera_manager import CameraManager
-
-logger = logging.getLogger(__name__)
+from logs.logging_config import logger
 
 load_dotenv()
 
@@ -169,11 +166,13 @@ async def video_feed(cam_id):
         empty_in_row = 0
         max_empty = 10
 
+        points = await Repo.select_coordinates_by_id(cam_id)
+
         try:
             while True:
                 if enable_motion:
                     frame, screenshot_path = await camera_manager.get_frame_with_motion_detection(
-                        cam_id, enable_motion=True, save_screenshot=save_screenshot
+                        cam_id, enable_motion=True, save_screenshot=save_screenshot, points=points
                     )
                 else:
                     frame = await camera_manager.get_frame_without_motion_detection(cam_id)
@@ -279,7 +278,7 @@ async def control():
     messages = get_flashed_messages(with_categories=True)
     return await render_template('control.html', all_cameras=all_cameras, all_users=all_users,
                                  host=user_host, port=user_port, messages=messages, status='admin',
-                                 current_range=current_range, masked_urls=masked_urls )
+                                 current_range=current_range, masked_urls=masked_urls)
 
 
 async def list_all_cameras():
@@ -323,6 +322,7 @@ async def add_new_camera():
     motion_detection = 1 if form_data.get("motion_detection") else 0
     visible_cam = 1 if form_data.get("visible_cam") else 0
     screen_cam = 1 if form_data.get("screen_cam") else 0
+
     send_email = 1 if form_data.get("send_email") else 0
     send_tg = 1 if form_data.get("send_tg") else 0
     if not new_cam:
@@ -382,12 +382,17 @@ async def edit_cam():
     screen_cam = 1 if form_data.get("screen_cam") else 0
     send_mail = 1 if form_data.get("send_mail") else 0
     send_telegram = 1 if form_data.get("send_telegram") else 0
+    coordinate_x1 = form_data.get("coordinate_x1")
+    coordinate_x2 = form_data.get("coordinate_x2")
+    coordinate_y1 = form_data.get("coordinate_y1")
+    coordinate_y2 = form_data.get("coordinate_y2")
+
     query = await check_rtsp(path_to_cam)
     if query is False:
         await flash("Error: Incorrect RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
     await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
-                           send_mail, send_telegram)
+                           send_mail, send_telegram, coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2)
     await flash("User added successfully!", "user_success")
     return redirect(url_for("control"))
 
