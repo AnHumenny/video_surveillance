@@ -3,17 +3,12 @@ import json
 from typing import Any
 from sqlalchemy import select, insert, delete, and_, update, Select
 from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from schemas.database import DCamera, DUser, DFindCamera
 import os
 import re
 from logs.logging_config import logger
+from config.config import new_session
 
-db_name = os.getenv("DATABASE")
-db_path = os.path.join(f'{db_name}.db')
-
-engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=True)
-new_session = async_sessionmaker(engine, expire_on_commit=False)
 
 class Repo:
 
@@ -38,6 +33,50 @@ class Repo:
             result = await session.execute(q)
             answer = result.scalar()
             if answer is None:
+                return None
+            return answer
+
+    @classmethod
+    async def auth_user_bot(cls, username, password):
+        """Authenticates the user by username and password.
+
+            If authorization is successful, sets the `active = 1` flag for the user
+                and saves the changes to the database.
+
+            Args:
+                cls: Class reference (unused).
+                username (str): Username to check.
+                password (str): Password to check (expected to be hashed).
+
+            Returns:
+               DUser | None; object of user, if found else None.
+            """
+        async with new_session() as session:
+            q = select(DUser).where(and_(DUser.user == username, DUser.password == password))
+            result = await session.execute(q)
+            answer = result.scalars().first()
+            if answer is None:
+                return None
+            answer.active = 1
+            await session.commit()
+            return answer
+
+    @classmethod
+    async def select_bot_bool(cls):
+        """Checks if a user exists with the given username and password.
+
+            Args:
+                cls: Class reference (unused).
+
+            Returns:
+               bool: True if user exists with matching credentials, None if not found.
+
+            """
+        async with new_session() as session:
+            q = select(DUser.tg_id).where(DUser.active == True)
+            result = await session.execute(q)
+            answer = result.scalars().all()
+            if not answer:
                 return None
             return answer
 
@@ -327,7 +366,7 @@ class Repo:
                     return e
 
     @classmethod
-    async def add_new_user(cls, user, password, status):
+    async def add_new_user(cls, user, password, status, tg_id, active):
         """Inserts a new user into the DUser table.
 
             Args:
@@ -335,6 +374,8 @@ class Repo:
                 user: str
                 password: str (e.g. r'^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=S+$).{8,20}$').
                 status: str
+                tg_id: int
+                active: bool
 
             Raises:
                 Exception: If insertion fails, with rollback performed.
@@ -342,7 +383,8 @@ class Repo:
         async with new_session() as session:
             async with session.begin():
                 try:
-                    q = insert(DUser).values(user=user, password=password, status=status)
+                    q = insert(DUser).values(user=user, password=password, status=status,
+                                             tg_id=int(tg_id), active=active)
                     await session.execute(q)
                     await session.commit()
                     return f"Пользователь {user} успешно добавлена!"
@@ -516,3 +558,27 @@ class Repo:
             except Exception as e:
                 logger.error(f"[ERROR] Failed to fetch coordinates: {e}")
                 return []
+
+
+    @classmethod
+    async def exit_user_bot(cls, tg_id):
+        """Checks if user exists with the given username and password."""
+        async with new_session() as session:
+            q = select(DUser).where(and_(DUser.tg_id == tg_id))
+            result = await session.execute(q)
+            answer = result.scalars().first()
+            if answer is None:
+                return None
+            answer.active = 0
+            await session.commit()
+            return answer
+
+
+    @classmethod
+    async def get_allowed_chat_ids(cls) -> list[int]:
+        """Select all users from DB where active is True"""
+        async with new_session() as session:
+            result = await session.execute(
+                select(DUser.tg_id).where(DUser.active == True)
+            )
+            return [row[0] for row in result.all() if row[0] is not None]

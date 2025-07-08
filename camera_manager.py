@@ -1,13 +1,13 @@
 import json
 import asyncio
 import os
+from collections import defaultdict
 from datetime import datetime
 import time
 from typing import Dict, Optional, Tuple
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-from numpy import ndarray
 from schemas.repository import Repo
 from logs.logging_config import logger
 
@@ -25,6 +25,11 @@ class CameraManager:
         self.recording_flags = {}
         self.recording_tasks = {}
         self.last_screenshot_times = {}
+        self.tracked_objects = {}
+        self.next_object_id = 0
+        self.count_object = 0
+        self.start_time = datetime.now().replace(microsecond=0)
+        self.prev_centroids: Dict[str, list[Tuple[int, int]]] = defaultdict(list)
         if not camera_config_json:
             raise ValueError("Camera configuration not found in database")
 
@@ -124,9 +129,8 @@ class CameraManager:
             cam_id (str): The ID of the camera.
             enable_motion (bool): Whether to apply motion detection.
             save_screenshot (bool): Whether to save a screenshot on central motion detection.
+            points: (list of tuple)
 
-        Returns:
-            Optional[np.ndarray]: Latest processed frame or None if unavailable.
         """
         cam_entry = self.cameras.get(cam_id)
         if not cam_entry:
@@ -147,9 +151,10 @@ class CameraManager:
         subtractor = self.background_subtractors[cam_id]
         screenshot_path = None
 
-        def detect(frm: np.ndarray) -> tuple[ndarray, str | None]:
-            """Motion detection, optionally with screenshot saving. Alarm monitoring zone by coordinates"""
+        def detect(frm: np.ndarray) -> tuple[np.ndarray, Optional[str]]:
+            """Motion detection with individual object tracking and optional screenshot saving."""
             nonlocal screenshot_path
+
             fg_mask = subtractor.apply(frm)
             kernel = np.ones((5, 5), np.uint8)
             fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
@@ -157,7 +162,6 @@ class CameraManager:
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             processed = frm.copy()
-            screenshot_taken = False
 
             now = time.time()
             last_time = self.last_screenshot_times.get(cam_id, 0)
@@ -165,37 +169,65 @@ class CameraManager:
             zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
             zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
 
-            for cnt in contours:                      # добавить размер обьекта на детектор движение?
-                if cv2.contourArea(cnt) < 500:
+            min_area = 1500
+            max_dist = 70
+            self.tracked_objects.setdefault(cam_id, {})
+            object_data = self.tracked_objects[cam_id]
+
+            for cnt in contours:
+                if cv2.contourArea(cnt) < min_area:
                     continue
+
                 x, y, w, h = cv2.boundingRect(cnt)
                 cx, cy = x + w // 2, y + h // 2
+                obj_in_zone = zone_x1 <= cx <= zone_x2 and zone_y1 <= cy <= zone_y2
 
-                if (
-                        save_screenshot and
-                        (zone_x1 <= cx <= zone_x2) and
-                        (zone_y1 <= cy <= zone_y2) and
-                        not screenshot_taken and
-                        (now - last_time) > 5
-                ):
-                    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
-                    save_dir = f"screenshots/camera_{cam_id}/{timestamp[:10]}/"
-                    os.makedirs(save_dir, exist_ok=True)
-                    filename = os.path.join(save_dir, f"motion_{timestamp}.jpg")
-                    cv2.imwrite(filename, frm)
-                    screenshot_path = filename
-                    logger.info(f"[INFO] Motion detected. Saved: {filename}")
-                    self.last_screenshot_times[cam_id] = now
-                    screenshot_taken = True
+                matched_id = None
+                for obj_id, data in object_data.items():
+                    prev_x, prev_y = data["position"]
+                    dist = ((prev_x - cx) ** 2 + (prev_y - cy) ** 2) ** 0.5
+                    if dist < max_dist and (now - data["last_seen"] < 2):
+                        matched_id = obj_id
+                        break
+
+                if matched_id is None and obj_in_zone:
+                    obj_id = self.next_object_id
+                    self.next_object_id += 1
+                    object_data[obj_id] = {"position": (cx, cy), "last_seen": now}
+                    self.count_object += 1
+                    logger.info(f"[INFO] Object with ID={obj_id} in zone. All: {self.count_object}")
+
+                    if save_screenshot and (now - last_time) > 2:
+                        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
+                        save_dir = f"media/screenshots/camera_{cam_id}/{timestamp[:10]}/"
+                        os.makedirs(save_dir, exist_ok=True)
+                        filename = os.path.join(save_dir, f"motion_{timestamp}.jpg")
+                        cv2.imwrite(filename, frm)
+                        screenshot_path = filename
+                        self.last_screenshot_times[cam_id] = now
+
+                elif matched_id is not None:
+                    object_data[matched_id]["position"] = (cx, cy)
+                    object_data[matched_id]["last_seen"] = now
 
                 cv2.rectangle(processed, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+            self.tracked_objects[cam_id] = {
+                obj_id: data
+                for obj_id, data in object_data.items()
+                if now - data["last_seen"] < 2
+            }
 
             cv2.rectangle(processed, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 0, 255), 2)
             cv2.putText(processed, "Zone", (zone_x1, max(0, zone_y1 - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
             if self.recording_flags.get(cam_id):
-                cv2.putText(processed, "REC", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+                cv2.putText(processed, "REC", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+
+            cv2.putText(processed, f"Detected objects: {self.count_object}, started at: {self.start_time}",
+                        (points[0][0], 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
             return processed, screenshot_path
 
@@ -373,7 +405,7 @@ class CameraManager:
         now = datetime.now()
         filename = f"{cam_id}_{now.strftime('%Y%m%d_%H%M%S')}.avi"
         current_stamp = now.strftime("%Y-%m-%d")
-        save_path = os.path.join("recordings", cam_id, f"camera_{cam_id}_{current_stamp}")
+        save_path = os.path.join("media", "recordings", cam_id, f"camera_{cam_id}_{current_stamp}")
         os.makedirs(save_path, exist_ok=True)
         full_path = os.path.join(save_path, filename)
         logger.info(f"[INFO] Record video started. Saved: {filename}")

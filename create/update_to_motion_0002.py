@@ -1,17 +1,11 @@
 import asyncio
-import os
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import text
 from logs.logging_config import logger
+from config.config import engine
+import os
 
 load_dotenv()
-
-base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-db_path = os.path.join(base_dir, f'{os.getenv("DATABASE")}.db')
-engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=True)
-new_session = async_sessionmaker(engine, expire_on_commit=False)
-
 
 async def add_column_to_camera():
     async with engine.begin() as conn:
@@ -22,7 +16,7 @@ async def add_column_to_camera():
 
         if 'send_tg' not in columns:
             await conn.execute(
-                text("ALTER TABLE _camera ADD COLUMN send_tg INTEGER DEFAULT 0"),
+                text(f"ALTER TABLE _camera ADD COLUMN send_tg INTEGER DEFAULT {os.getenv("TELEGRAM_CHAT_ID")}"),
             )
             logger.info(f"[INFO] Column send_tg added.")
         else:

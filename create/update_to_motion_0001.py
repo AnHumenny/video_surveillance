@@ -1,17 +1,10 @@
 import asyncio
-import os
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import text
 from logs.logging_config import logger
+from config.config import engine
 
 load_dotenv()
-
-base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-db_path = os.path.join(base_dir, f'{os.getenv("DATABASE")}.db')
-engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=True)
-new_session = async_sessionmaker(engine, expire_on_commit=False)
-
 
 async def add_column_cam_to_camera():
     async with engine.begin() as conn:

@@ -25,8 +25,8 @@ sudo apt install -y libgl1 nmap
 ```
 
 ```Создайте и активируйте виртуальное окружение
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
 Установите Python-зависимости
@@ -53,11 +53,18 @@ SMTP_SERVER="smtp.gmail.com"
 RECIPIENT_EMAIL="получатель"
 
 TELEGRAM_BOT_TOKEN="токен ТГ-бота"
-TELEGRAM_CHAT_ID="чат получателя"
+TELEGRAM_CHAT_ID=чат получателя(int)
 ```
 
 Из корневой директории приложения
 ```python3 -m create.install```
 
-Запуск
-python ```main.py```
+### Запуск
+
+```bash
+./start.sh
+
+Скрипт запускает:
+Основной сервер (main.py)
+Telegram-бота (bot/app.py)
+Celery worker (celery_app.celery)

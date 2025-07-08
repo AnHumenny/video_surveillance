@@ -7,7 +7,7 @@ load_dotenv()
 
 name_db = os.getenv("DATABASE")
 password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()
-user_info = ["admin", f"{password}", "test"]
+user_info = ["user", f"{password}", "user"]
 
 
 def insert_into_user():

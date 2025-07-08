@@ -27,8 +27,8 @@
                     <h5>Указать диапазон поиска</h5>
                     <h6><i>Актуальный диапазон поиска {{ current_range }}</i></h6>
                     <form method="post" action="{{ url_for('update_route') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
-                        <input type="text" name="cam_host" id="cam_host" required>
-                        <input type="text" name="subnet_mask" required>
+                        <input type="text" name="cam_host" id="cam_host" placeholder="192.168.1.1" required>
+                        <input type="text" name="subnet_mask" placeholder="24" required>
                         <input type="submit" value="Добавить">
                     </form>
                 </div>
@@ -37,12 +37,10 @@
                 </div>
                 <div class="add-camera">
                     <h5>Добавить камеру</h5>
-                    <p><i>Example: rtsp://user:password@192.168.1.4:554/h265</i><br>
-                       <i>Example: rtsp://user:password@192.168.1.4:554/live/ch00_1</i></p>
                     <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 10px;">
                         <div>
                         <label for="new_cam">Маршрут:</label>
-                            <input type="text" name="new_cam" id="new_cam" required>
+                            <input type="text" name="new_cam" id="new_cam" placeholder="rtsp://user:password@192.168.1.4:554/" required>
                         </div>
                         <div style="display: flex; gap: 20px; align-items: center;">
                             <label for="visible_cam">Видимость камеры:</label>
@@ -78,31 +76,39 @@
                     <div style="flex-grow: 1; border-bottom: 1px solid black;">&nbsp;</div>
                 </div>
                 <div class="add-user">
-                    <h5>Добавить пользователя</h5>
-                    <form method="post" action="{{ url_for('add_new_user') }}" enctype="multipart/form-data">
-                        <input type="text" name="new_user" id="new_user" required>
-                        <input type="text" name="new_password" id="new_password" required>
-                        <select name="status" id="status" required>
-                            <option value="user">Пользователь</option>
-                            <option value="admin">Администратор</option>
-                        </select>
-                        <div align="right"><input type="submit" value="Добавить"></div>
-                    </form>
-                    {% if get_flashed_messages(with_categories=True) %}
-                        {% for category, message in get_flashed_messages(with_categories=True) %}
-                            {% if category in ['user_success', 'user_error', 'user_deleted', 'admin_not_deleted', 'password_error'] %}
-                                <p class="message-{{ category }}">{{ message }}</p>
-                            {% endif %}
-                        {% endfor %}
-                    {% endif %}
-                    {% for row in all_users %}
-                        <div class="camera-item">
-                            {{ row.id }} || {{ row.user }} || {{ row.status }}
-                            <a href="{{ url_for('delete_user', ssid=row.id) }}">
-                                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить"></a>
-                        </div>
-                    {% endfor %}
-                </div>
+    <h5>Добавить пользователя</h5>
+    <form method="post" action="{{ url_for('add_new_user') }}" enctype="multipart/form-data" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+        <input type="text" name="new_user" id="new_user" placeholder="Имя пользователя" required>
+        <input type="text" name="new_password" id="new_password" placeholder="Пароль" required>
+
+        <input type="text" name="tg_id" id="tg_id" placeholder="Telegram ID" required>
+        <label><input type="checkbox" name="active" value="0">Отправка в ТГ?</label>
+
+        <select name="status" id="status" required>
+            <option value="user">Пользователь</option>
+            <option value="admin">Администратор</option>
+        </select>
+
+        <input type="submit" value="Добавить">
+    </form>
+
+    {% if get_flashed_messages(with_categories=True) %}
+        {% for category, message in get_flashed_messages(with_categories=True) %}
+            {% if category in ['user_success', 'user_error', 'user_deleted', 'admin_not_deleted', 'password_error'] %}
+                <p class="message-{{ category }}">{{ message }}</p>
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
+    {% for row in all_users %}
+        <div class="camera-item">
+            {{ row.id }} || {{ row.user }} || {{ row.status }}
+            <a href="{{ url_for('delete_user', ssid=row.id) }}">
+                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить">
+            </a>
+        </div>
+    {% endfor %}
+        </div>
             </div>
 
             <div class="right-column">
