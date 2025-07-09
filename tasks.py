@@ -1,6 +1,7 @@
 import os
 import smtplib
 from email.mime.text import MIMEText
+from datetime import datetime
 from celery_app import celery
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -72,38 +73,25 @@ def send_screenshot_email(cam_id: str, screenshot_path: str):
         return f"Error sending screenshot: {e}"
 
 
-count = 1
-
 @celery.task(name="tasks.send_telegram_photo")
-def send_telegram_notification(cam_id: str, screenshot_path: str) -> str:
-    global count
-
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-
-    if not bot_token or not chat_id:
-        logger.info("[TASK] Отсутствует токен или chat_id")
-        return "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID"
-
-    url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-    caption = f"Движение зафиксировано на камере {cam_id} \nКоличество объектов: {count}"
+def send_telegram_notification(cam_id: str, screenshot_path: str, chat_id: int) -> str:
     try:
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        if not bot_token:
+            return "TELEGRAM_BOT_TOKEN not found"
+
+        url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+        caption = f"Движение на камере {cam_id} ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
+
         with open(screenshot_path, "rb") as photo_file:
             files = {"photo": photo_file}
-            data = {
-                "chat_id": chat_id,
-                "caption": caption,
-            }
-
-            response = httpx.post(url, data=data, files=files, timeout=1)
-            logger.info(f"[TASK] Telegram sendPhoto response: {response.status_code}")
-            count += 1
+            data = {"chat_id": chat_id, "caption": caption}
+            response = httpx.post(url, data=data, files=files, timeout=5)
 
             if response.status_code == 200:
                 return "Photo sent successfully"
             else:
-                return f"Failed to send photo: {response.status_code}, {response.text}"
+                return f"Error: {response.status_code}, {response.text}"
 
     except Exception as e:
-        logger.info(f"[TASK] Error sending photo: {e}")
-        return f"Exception during Telegram sendPhoto: {e}"
+        return f"Exception when sending photos: {e}"

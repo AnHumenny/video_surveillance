@@ -3,17 +3,12 @@ import asyncio
 import hashlib
 import time
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.future import select
 from schemas.database import Model, DUser, DFindCamera
+from logs.logging_config import logger
+from config.config import engine, new_session
 
 load_dotenv()
-
-base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-db_path = os.path.join(base_dir, f'{os.getenv("DATABASE")}.db')
-engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=True)
-new_session = async_sessionmaker(engine, expire_on_commit=False)
-from logs.logging_config import logger
 
 password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()
 user_info = {
@@ -38,6 +33,8 @@ async def insert_into_user():
     """Adding a primary user"""
     async with new_session() as session:
         async with session.begin():
+            user_info["tg_id"] = os.getenv("TELEGRAM_CHAT_ID")
+            user_info["active"] = "1"
             stmt = select(DUser).where(DUser.user == user_info["user"])
             result = await session.execute(stmt)
             if result.scalar():

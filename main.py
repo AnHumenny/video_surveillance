@@ -10,7 +10,6 @@ import asyncio
 from quart import (Quart, request, jsonify, render_template, make_response, Response, redirect, url_for, session, flash,
     get_flashed_messages)
 import signal
-import sys
 from functools import wraps
 import jwt
 from datetime import datetime, timedelta, timezone
@@ -155,6 +154,7 @@ async def video_feed(cam_id):
     """Stream video feed with motion detection and optional screenshot saving."""
     if camera_manager is None:
         return "CameraManager not initialized", 500
+    allowed_ids = await Repo.get_allowed_chat_ids()
 
     async def stream():
         config = await Repo.select_cam_config(cam_id)
@@ -191,8 +191,9 @@ async def video_feed(cam_id):
                 if send_email and screenshot_path:
                     tasks.send_screenshot_email.delay(cam_id, screenshot_path)
 
-                if send_tg and screenshot_path:                 # добавить бота за паролем. Или частичное управление интерфейсом панели управления с телеги
-                    tasks.send_telegram_notification.delay(cam_id, screenshot_path)
+                if send_tg and screenshot_path:
+                    for chat_id in allowed_ids:
+                        tasks.send_telegram_notification.delay(cam_id, screenshot_path, chat_id)
 
                 width, height = map(int, os.getenv("SIZE_VIDEO").split(","))
                 frame = cv2.resize(frame, (width, height))
@@ -358,11 +359,13 @@ async def add_new_user():
     user = form_data.get("new_user")
     password = form_data.get("new_password")
     status = form_data.get("status")
+    tg_id = form_data.get("tg_id")
+    active = form_data.get("active")
     if not re.match(PASSWORD_PATTERN, password):
         await flash("Password structure does not match!", "password_error")
         return redirect(url_for("control"))
     pswrd = hash_password(password)
-    q = await Repo.add_new_user(user, pswrd, status)
+    q = await Repo.add_new_user(user, pswrd, status, tg_id, active)
     if q is False:
         await flash("This user already exists!", "user_error")
         return redirect(url_for("control"))
@@ -577,34 +580,52 @@ async def health_server():
     return jsonify({"task_id": task.id}, "success")
 
 
+shutdown_event = asyncio.Event()
+
+def handle_shutdown():
+    logger.info("[INFO] Shutdown signal received")
+    shutdown_event.set()
+
+
+async def shutdown_trigger():
+    await shutdown_event.wait()
+
+
 async def cleanup():
-    """Clearing resources on completion"""
-    await camera_manager.cleanup()
+    logger.info("[INFO] Cleanup starting...")
+    for cam_id in list(camera_manager.cameras.keys()):
+        await camera_manager._stop_camera_reader(cam_id)
+    logger.info("[INFO] All cameras stopped.")
 
 
 async def main(host: str, port: int, debug: bool = False):
     config = Config()
     config.bind = [f"{host}:{port}"]
     config.debug = debug
+
     success = await camera_manager.load_camera_configs()
     if success:
         await camera_manager.initialize()
     else:
         logger.info("Cameras not initialized, app continues to launch.")
-    try:
-        await serve(app, config)
-    except asyncio.CancelledError:
-        logger.error("Server interrupted, shutting down...")
-        await cleanup()
+
+    await serve(app, config, shutdown_trigger=shutdown_trigger)
+
+    await cleanup()
 
 
 if __name__ == '__main__':
-    def handle_shutdown(sig, frame):
-        """Signal handler for completion"""
-        asyncio.create_task(cleanup())
-        sys.exit(0)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, handle_shutdown)
+        loop.add_signal_handler(sig, handle_shutdown)
 
-    asyncio.run(main(host=os.getenv('HOST'), port=int(os.getenv("PORT"))))
+    try:
+        loop.run_until_complete(main(
+            host=os.getenv('HOST', '0.0.0.0'),
+            port=int(os.getenv("PORT", 8080))
+        ))
+    finally:
+        loop.close()
+        logger.info("[INFO] Event loop closed")

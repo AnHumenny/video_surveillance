@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, BigInteger
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -13,8 +13,6 @@ class DCamera(Model):
         Attributes:
             path_to_cam (str): path to camera ().
 
-        Table:
-            _camera: The database table name.
         """
     __tablename__ = "_camera"
     path_to_cam = Column(String(200), unique=True)
@@ -36,14 +34,16 @@ class DUser(Model):
             user (str): Unique username of the user, max length 50 characters.
             password (str): Hashed password of the user, max length 100 characters.
             status (str): user status(admin, user).
+            tg_id (int): users TG-ID
+            active (int): users status authorization in tg-bot
 
-        Table:
-            user: The database table name.
         """
     __tablename__ = "_user"
     user = Column(String(50), unique=True)
     password = Column(String(100))
     status = Column(String(10))
+    tg_id = Column(BigInteger, unique=True, nullable=True, default=0)
+    active = Column(Integer, default=0)
 
 
 class DFindCamera(Model):
@@ -53,8 +53,6 @@ class DFindCamera(Model):
             cam_host (str): Path for find (a.e. 192.168.0.1).
             subnet_mask (str): subnet mask (a.e. 24).
 
-    Table:
-        _find_camera: The database table name.
     """
     __tablename__ = "_find_camera"
     cam_host = Column(String(200))
