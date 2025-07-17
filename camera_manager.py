@@ -10,7 +10,6 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from schemas.repository import Repo
 from logs.logging_config import logger
-
 class CameraManager:
     """Asynchronous manager that maintains exactly **one** VideoCapture per physical
     camera, runs a background reader task for each camera, and exposes the most
@@ -28,6 +27,7 @@ class CameraManager:
         self.tracked_objects = {}
         self.next_object_id = 0
         self.count_object = 0
+        self.last_video_paths = {}
         self.start_time = datetime.now().replace(microsecond=0)
         self.prev_centroids: Dict[str, list[Tuple[int, int]]] = defaultdict(list)
         if not camera_config_json:
@@ -122,7 +122,7 @@ class CameraManager:
             enable_motion: bool,
             save_screenshot: bool = False,
             points: Optional[list[tuple[int, int]]] = None
-    ) -> Tuple[Optional[np.ndarray], Optional[str]]:
+    ) -> Tuple[Optional[np.ndarray], Optional[str], Optional[str]]:
         """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
 
         Args:
@@ -130,29 +130,29 @@ class CameraManager:
             enable_motion (bool): Whether to apply motion detection.
             save_screenshot (bool): Whether to save a screenshot on central motion detection.
             points: (list of tuple)
-
         """
         cam_entry = self.cameras.get(cam_id)
         if not cam_entry:
             logger.error(f"[ERROR] Camera {cam_id} not running")
-            return None, None
+            return None, None, None
 
-        queue: asyncio.Queue = cam_entry['queue']  # type: ignore
+        queue: asyncio.Queue = cam_entry['queue']
         try:
             frame = await asyncio.wait_for(queue.get(), timeout=2.0)
         except asyncio.TimeoutError:
             logger.warning(f"[WARN] Timeout waiting for frame from camera {cam_id}")
-            return None, None
+            return None, None, None
 
         if not enable_motion:
-            return frame
+            return frame, None, None
 
         loop = asyncio.get_running_loop()
         subtractor = self.background_subtractors[cam_id]
         screenshot_path = None
+        video_path: Optional[str] = None
 
-        def detect(frm: np.ndarray) -> tuple[np.ndarray, Optional[str]]:
-            """Motion detection with individual object tracking and optional screenshot saving."""
+        def detect(frm: np.ndarray) -> tuple[np.ndarray, Optional[str], bool]:
+            """Motion detection with object tracking, screenshot saving, and record trigger."""
             nonlocal screenshot_path
 
             fg_mask = subtractor.apply(frm)
@@ -162,17 +162,17 @@ class CameraManager:
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             processed = frm.copy()
-
             now = time.time()
             last_time = self.last_screenshot_times.get(cam_id, 0)
 
             zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
             zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
 
-            min_area = 1500
-            max_dist = 70
+            min_area = 1500         # методом подбора (вынести в БД?)
+            max_dist = 70           # методом подбора (вынести в БД?)
             self.tracked_objects.setdefault(cam_id, {})
             object_data = self.tracked_objects[cam_id]
+            should_record = False
 
             for cnt in contours:
                 if cv2.contourArea(cnt) < min_area:
@@ -206,6 +206,9 @@ class CameraManager:
                         screenshot_path = filename
                         self.last_screenshot_times[cam_id] = now
 
+                    if not self.recording_flags.get(cam_id, False):
+                        should_record = True
+
                 elif matched_id is not None:
                     object_data[matched_id]["position"] = (cx, cy)
                     object_data[matched_id]["last_seen"] = now
@@ -229,9 +232,66 @@ class CameraManager:
             cv2.putText(processed, f"Detected objects: {self.count_object}, started at: {self.start_time}",
                         (points[0][0], 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-            return processed, screenshot_path
+            return processed, screenshot_path, should_record
 
-        return await loop.run_in_executor(self.executor, detect, frame)
+        processed, screenshot_path, should_record = await loop.run_in_executor(self.executor, detect, frame)
+
+        if should_record:
+            self.recording_flags[cam_id] = True
+            video_path = self.generate_video_path(cam_id)
+
+            async def record_and_reset():
+                await self.record_video(cam_id, video_path, duration_sec=int(os.getenv("BOT_SEND_VIDEO")))
+                self.recording_flags[cam_id] = False
+
+            asyncio.create_task(record_and_reset())
+        else:
+            video_path = None
+
+        return processed, screenshot_path, video_path
+
+    @staticmethod
+    def generate_video_path(cam_id: str) -> str:
+        now = datetime.now()
+        filename = f"{cam_id}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
+        current_stamp = now.strftime("%Y-%m-%d")
+        save_path = os.path.join("media", "recordings", cam_id, f"camera_{cam_id}_{current_stamp}")
+        os.makedirs(save_path, exist_ok=True)
+        return os.path.join(save_path, filename)
+
+    async def record_video(self, cam_id: str, full_path: str, duration_sec: int = 5) -> Optional[str]:
+        cam_data = self.cameras.get(cam_id)
+        if not cam_data:
+            logger.error(f"[ERROR] Camera {cam_id} not found")
+            return None
+
+        queue: asyncio.Queue = cam_data["queue"]
+
+        try:
+            frame = await asyncio.wait_for(queue.get(), timeout=int(os.getenv("BOT_SEND_VIDEO")))
+        except asyncio.TimeoutError:
+            logger.error(f"[ERROR] No camera footage {cam_id}")
+            return None
+
+        height, width = frame.shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(full_path, fourcc, self.fps, (width, height))
+
+        loop = asyncio.get_running_loop()
+        end_time = time.time() + duration_sec
+
+
+        while time.time() < end_time:
+            try:
+                frame = await asyncio.wait_for(queue.get(), timeout=2)
+                await loop.run_in_executor(self.executor, out.write, frame)
+            except asyncio.TimeoutError:
+                continue
+
+        await loop.run_in_executor(self.executor, out.release)
+        logger.info(f"[INFO] Video saved: {full_path}")
+
+        return full_path
 
     async def cleanup(self) -> None:
         """Stop all camera readers and release resources."""
@@ -361,22 +421,24 @@ class CameraManager:
 
     async def start_continuous_recording(self, cam_id: str):
         """Starts continuous video recording for 30 seconds until stop command."""
-        if cam_id in self.recording_flags and self.recording_flags[cam_id]:
-            logger.info(f"[INFO] Registration is already underway for {cam_id}")
+        if self.recording_flags.get(cam_id):
+            logger.info(f"[INFO] Recording is already underway for {cam_id}")
             return
         self.recording_flags[cam_id] = True
         logger.info(f"[INFO] Start continuous recording for {cam_id}")
 
         async def record_loop():
-            """
-            Starts a looped (continuous) video recording in 30 second blocks.
-
-            Recording continues until a stop command is received.
-            Each fragment is saved separately. Uses the self.recording_flags[cam_id] flag
-            to control start/stop.
-            """
+            """Continuous loop of 30s video recordings while flag is True."""
             while self.recording_flags.get(cam_id, False):
-                await self.record_video(cam_id, duration_sec=30)
+                full_path = self.generate_video_path(cam_id)
+                try:
+                    await self.record_video(cam_id, full_path, duration_sec=30)
+                except Exception as e:
+                    logger.error(f"[ERROR] Failed to record video for {cam_id}: {e}")
+                await asyncio.sleep(1)
+
+            logger.info(f"[INFO] Recording loop exited for {cam_id}")
+
         task = asyncio.create_task(record_loop(), name=f"recording-{cam_id}")
         self.recording_tasks[cam_id] = task
 
@@ -394,56 +456,6 @@ class CameraManager:
                     pass
         else:
             logger.info(f"[INFO] The recording was not made for {cam_id}")
-
-    async def record_video(self, cam_id: str, duration_sec: int = 10) -> Optional[str]:
-        """Records video from the camera for the specified time (in seconds)."""
-        cam_data = self.cameras.get(cam_id)
-        if not cam_data:
-            logger.error(f"[ERROR] Camera {cam_id} not found")
-            return None
-        queue: asyncio.Queue = cam_data["queue"]
-        now = datetime.now()
-        filename = f"{cam_id}_{now.strftime('%Y%m%d_%H%M%S')}.avi"
-        current_stamp = now.strftime("%Y-%m-%d")
-        save_path = os.path.join("media", "recordings", cam_id, f"camera_{cam_id}_{current_stamp}")
-        os.makedirs(save_path, exist_ok=True)
-        full_path = os.path.join(save_path, filename)
-        logger.info(f"[INFO] Record video started. Saved: {filename}")
-
-        try:
-            frame = await asyncio.wait_for(queue.get(), timeout=5)
-        except asyncio.TimeoutError:
-            logger.error(f"[ERROR] No camera footage {cam_id}")
-            return None
-
-        height, width = frame.shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter(full_path, fourcc, self.fps, (width, height))
-
-        loop = asyncio.get_running_loop()
-
-        async def writer():
-            """
-            Asynchronous task of recording a fixed-duration video clip.
-
-            Reads frames from the queue and writes them to a file using cv2.VideoWriter`.
-            The recording continues for `duration_sec` seconds, taking into account the time.
-            All write and release operations of the `out` resource are performed in the `ThreadPoolExecutor`,
-            to avoid blocking the main asynchronous thread.
-
-            """
-            end_time = time.time() + duration_sec
-            while time.time() < end_time:
-                try:
-                    frame = await asyncio.wait_for(queue.get(), timeout=2)
-                    await loop.run_in_executor(self.executor, out.write, frame)
-                except asyncio.TimeoutError:
-                    continue
-            await loop.run_in_executor(self.executor, out.release)
-
-        await writer()
-        logger.info(f"[INFO] Video saved: {full_path}")
-        return full_path
 
 
     async def reinitialize_camera(self, cam_id: str) -> bool:

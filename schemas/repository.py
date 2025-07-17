@@ -209,7 +209,8 @@ class Repo:
 
     @classmethod
     async def edit_camera(cls, ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
-                          send_mail, send_telegram, coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2
+                          send_mail, send_telegram, send_video_tg, coordinate_x1, coordinate_x2, coordinate_y1,
+                          coordinate_y2
                           ):
         """Edit path to camera.
 
@@ -222,13 +223,12 @@ class Repo:
                 screen_cam: bool
                 send_mail: bool
                 send_telegram: bool
+                send_video_tg: bool
                 coordinate_x1: str  (a.e. 224, 100)
                 coordinate_x2: str  (a.e. 224, 200)
                 coordinate_y1: str  (a.e. 300, 100)
                 coordinate_y2: str  (a.e. 400, 100)
 
-            Returns:
-                200 if ok
             """
         async with (new_session() as session):
             ssid = int(ssid)
@@ -240,6 +240,7 @@ class Repo:
                                                    screen_cam=screen_cam,
                                                    send_email=send_mail,
                                                    send_tg=send_telegram,
+                                                   send_video_tg=send_video_tg,
                                                    coordinate_x1=coordinate_x1,
                                                    coordinate_x2=coordinate_x2,
                                                    coordinate_y1=coordinate_y1,
@@ -291,8 +292,8 @@ class Repo:
         async with new_session() as session:
             try:
                 q = Select(
-                    DCamera.status_cam, DCamera.screen_cam, DCamera.send_email, DCamera.send_tg).where(
-                    DCamera.id == ssid, DCamera.visible_cam == True)
+                    DCamera.status_cam, DCamera.screen_cam, DCamera.send_email, DCamera.send_tg,
+                    DCamera.send_video_tg, ).where(DCamera.id == ssid, DCamera.visible_cam == True)
                 result = await session.execute(q)
                 row = result.first()
                 if row:

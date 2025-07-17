@@ -28,7 +28,7 @@ app = Quart(__name__)
 app.secret_key = os.urandom(24)
 
 app.template_folder = "templates"
-camera_manager = CameraManager()
+camera_manager: CameraManager = CameraManager()
 
 @app.before_serving
 async def setup_camera_manager():
@@ -162,7 +162,7 @@ async def video_feed(cam_id):
         save_screenshot = config["screen"]
         send_email = config["send_email"]
         send_tg = config["send_tg"]
-
+        send_tg_video = ["send_tg_video"]
         empty_in_row = 0
         max_empty = 10
 
@@ -171,12 +171,13 @@ async def video_feed(cam_id):
         try:
             while True:
                 if enable_motion:
-                    frame, screenshot_path = await camera_manager.get_frame_with_motion_detection(
+                    frame, screenshot_path, video_path = await camera_manager.get_frame_with_motion_detection(
                         cam_id, enable_motion=True, save_screenshot=save_screenshot, points=points
                     )
                 else:
                     frame = await camera_manager.get_frame_without_motion_detection(cam_id)
                     screenshot_path = None
+                    video_path = None
 
                 if frame is None:
                     empty_in_row += 1
@@ -194,6 +195,10 @@ async def video_feed(cam_id):
                 if send_tg and screenshot_path:
                     for chat_id in allowed_ids:
                         tasks.send_telegram_notification.delay(cam_id, screenshot_path, chat_id)
+
+                if send_tg_video and video_path:
+                    for chat_id in allowed_ids:
+                        tasks.send_telegram_video.delay(cam_id, video_path, chat_id)
 
                 width, height = map(int, os.getenv("SIZE_VIDEO").split(","))
                 frame = cv2.resize(frame, (width, height))
@@ -378,6 +383,7 @@ async def add_new_user():
 async def edit_cam():
     """editing the path to camera."""
     form_data = await request.form
+    print(dict(form_data))
     ssid = form_data.get("cameraId")
     path_to_cam = form_data.get("cameraPath")
     motion_detection = 1 if form_data.get("motion_detect") else 0
@@ -385,6 +391,7 @@ async def edit_cam():
     screen_cam = 1 if form_data.get("screen_cam") else 0
     send_mail = 1 if form_data.get("send_mail") else 0
     send_telegram = 1 if form_data.get("send_telegram") else 0
+    send_video_tg = 1 if form_data.get("send_video_tg") else 0
     coordinate_x1 = form_data.get("coordinate_x1")
     coordinate_x2 = form_data.get("coordinate_x2")
     coordinate_y1 = form_data.get("coordinate_y1")
@@ -395,8 +402,10 @@ async def edit_cam():
         await flash("Error: Incorrect RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
     await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
-                           send_mail, send_telegram, coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2)
-    await flash("User added successfully!", "user_success")
+                           send_mail, send_telegram, send_video_tg,
+                           coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2,
+                           )
+    await flash("Camera updated successfully!", "user_success")
     return redirect(url_for("control"))
 
 
@@ -537,20 +546,7 @@ async def take_screenshot(cam_id):
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, filename)
     cv2.imwrite(path, frame)
-    await start_recording(cam_id)
     return jsonify({"status": "ok", "filename": filename})
-
-
-@app.route('/start_recording/<cam_id>', methods=['POST'])   # тест, привязать к срабатыванию скриншота на детекцию движения
-@token_required_camera
-async def start_recording(cam_id):
-    """short entry (10 sec.)"""
-    if camera_manager is None:
-        return "CameraManager not initialized", 500
-    path = await camera_manager.record_video(cam_id, duration_sec=10)
-    if not path:
-        return jsonify({"status": "error", "message": "Failed to record video"}), 500
-    return jsonify({"status": "ok", "file": path})
 
 
 @app.route("/start_recording_loop/<cam_id>", methods=["POST"])
@@ -569,7 +565,20 @@ async def stop_recording_loop(cam_id):
     return jsonify({"status": "recording_stopped"})
 
 
-@app.route("/health_server", methods=["POST"])
+async def force_start_cam(cam_id):      #к боту
+    """Forcing the camera to start"""
+    asyncio.create_task(camera_manager.reinitialize_camera(cam_id))   # в бота
+    return jsonify({"status": f"camera_{cam_id}_started"})
+
+
+@app.route("/force_stop_cam/<cam_id>", methods=["GET"])   # в бота
+async def force_stop_cam(cam_id):
+    """Forcing the camera to stop"""
+    asyncio.create_task(camera_manager._stop_camera_reader(cam_id))
+    return redirect(url_for('control'))
+
+
+@app.route("/health_server", methods=["POST"])    # в бота
 async def health_server():
     if request.content_type == 'application/json':
         data = await request.get_json()
