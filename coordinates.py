@@ -5,7 +5,7 @@ from logs.logging_config import logger
 import subprocess
 import json
 
-rtsp_url = "rtsp://user:password@192.168.1.34"
+rtsp_url = "rtsp://user:password@192.168.1.4:554"
 
 coordinate = []
 should_exit = False

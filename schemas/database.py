@@ -21,6 +21,7 @@ class DCamera(Model):
     screen_cam = Column(Boolean, nullable=False)
     send_email = Column(Boolean, nullable=False)
     send_tg = Column(Boolean, nullable=False)
+    send_video_tg = Column(Boolean, nullable=False)
     coordinate_x1 = Column(String(12), default="0, 0")
     coordinate_x2 = Column(String(12), default="0, 0")
     coordinate_y1 = Column(String(12), default="0, 0")

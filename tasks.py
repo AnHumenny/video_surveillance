@@ -1,5 +1,7 @@
+import requests
 import os
 import smtplib
+import time
 from email.mime.text import MIMEText
 from datetime import datetime
 from celery_app import celery
@@ -95,3 +97,34 @@ def send_telegram_notification(cam_id: str, screenshot_path: str, chat_id: int) 
 
     except Exception as e:
         return f"Exception when sending photos: {e}"
+
+
+@celery.task(name="tasks.send_telegram_video")
+def send_telegram_video(cam_id: str, video_path: str, chat_id: int) -> str:
+    time.sleep(int(os.getenv("BOT_SEND_VIDEO")) + 2)
+
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not bot_token:
+        return "TELEGRAM_BOT_TOKEN not found"
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendVideo"
+    caption = f"Движение на камере {cam_id} ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})"
+
+    try:
+        with open(video_path, "rb") as video_file:
+            files = {"video": video_file}
+            data = {
+                "chat_id": chat_id,
+                "caption": caption,
+                "supports_streaming": True
+            }
+
+            response = requests.post(url, data=data, files=files, timeout=int(os.getenv("BOT_SEND_VIDEO")) + 4)
+
+        if response.status_code == 200:
+            return "Video sent successfully"
+        else:
+            return f"Error: {response.status_code}, {response.text}"
+
+    except Exception as e:
+        return f"Exception when sending video: {e}"

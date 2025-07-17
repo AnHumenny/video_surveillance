@@ -13,7 +13,7 @@
 
 ```bash
 sudo apt update
-sudo apt install -y libgl1 nmap
+sudo apt install -y libgl1 nmap ffmpeg
 ```
 
 ### Windows
@@ -54,6 +54,8 @@ RECIPIENT_EMAIL="получатель"
 
 TELEGRAM_BOT_TOKEN="токен ТГ-бота"
 TELEGRAM_CHAT_ID=чат получателя(int)
+
+BOT_SEND_VIDEO=5
 ```
 
 Из корневой директории приложения
