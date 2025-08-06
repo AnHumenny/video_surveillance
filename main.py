@@ -567,11 +567,10 @@ async def stop_recording_loop(cam_id):
 
 async def force_start_cam(cam_id):      #к боту
     """Forcing the camera to start"""
-    asyncio.create_task(camera_manager.reinitialize_camera(cam_id))   # в бота
-    return jsonify({"status": f"camera_{cam_id}_started"})
+    await camera_manager.reinitialize_camera(cam_id)
 
 
-@app.route("/force_stop_cam/<cam_id>", methods=["GET"])   # в бота
+@app.route("/force_stop_cam/<cam_id>", methods=["GET"])
 async def force_stop_cam(cam_id):
     """Forcing the camera to stop"""
     asyncio.create_task(camera_manager._stop_camera_reader(cam_id))

@@ -45,6 +45,7 @@ PORT="port"
 CAM_HOST="192.168.0.1" (первичный маршрут)
 SUBNET_MASK="24" (первичная маска)
 TOKEN_TIME_AUTHORIZATION=(время действия токена авторизации(hours))
+CLOUDFIRE_URL="url cloudfire"
 
 SENDER_EMAIL="отправитель"
 SENDER_PASSWORD="код приложения отправителя"
