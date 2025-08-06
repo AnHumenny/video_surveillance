@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import json
 from typing import Any
@@ -7,7 +8,7 @@ from schemas.database import DCamera, DUser, DFindCamera
 import os
 import re
 from logs.logging_config import logger
-from config.config import new_session
+from config.config import new_session, bot_session
 
 
 class Repo:
@@ -36,49 +37,7 @@ class Repo:
                 return None
             return answer
 
-    @classmethod
-    async def auth_user_bot(cls, username, password):
-        """Authenticates the user by username and password.
 
-            If authorization is successful, sets the `active = 1` flag for the user
-                and saves the changes to the database.
-
-            Args:
-                cls: Class reference (unused).
-                username (str): Username to check.
-                password (str): Password to check (expected to be hashed).
-
-            Returns:
-               DUser | None; object of user, if found else None.
-            """
-        async with new_session() as session:
-            q = select(DUser).where(and_(DUser.user == username, DUser.password == password))
-            result = await session.execute(q)
-            answer = result.scalars().first()
-            if answer is None:
-                return None
-            answer.active = 1
-            await session.commit()
-            return answer
-
-    @classmethod
-    async def select_bot_bool(cls):
-        """Checks if a user exists with the given username and password.
-
-            Args:
-                cls: Class reference (unused).
-
-            Returns:
-               bool: True if user exists with matching credentials, None if not found.
-
-            """
-        async with new_session() as session:
-            q = select(DUser.tg_id).where(DUser.active == True)
-            result = await session.execute(q)
-            answer = result.scalars().all()
-            if not answer:
-                return None
-            return answer
 
     @classmethod
     async def select_users(cls):
@@ -560,11 +519,106 @@ class Repo:
                 logger.error(f"[ERROR] Failed to fetch coordinates: {e}")
                 return []
 
+    @classmethod
+    async def get_allowed_chat_ids(cls) -> list[int]:
+        """Select all users from DB where active is True"""
+        async with bot_session() as session:
+            result = await session.execute(
+                select(DUser.tg_id).where(DUser.active == True)
+            )
+            return [row[0] for row in result.all() if row[0] is not None]
+
+
+class Userbot:
+
+    @classmethod
+    async def auth_user_bot(cls, username, password):
+        """Authenticates the user by username and password."""
+        async with bot_session() as session:
+            q = select(DUser).where(and_(DUser.user == username, DUser.password == password))
+            result = await session.execute(q)
+            answer = result.scalars().first()
+            if answer is None:
+                return None
+            answer.active = 1
+            await session.commit()
+            return answer
+
+    @classmethod
+    async def movie_on(cls, cam_id):
+        """Movie to TG ON"""
+        async with bot_session() as session:
+            try:
+                query = (
+                    update(DCamera)
+                    .where(DCamera.id == int(cam_id))
+                    .values(status_cam=True, send_video_tg=True)
+                )
+                await session.execute(query)
+                await session.commit()
+                return {"status": "ok", "message": f"Видео по камере {cam_id} включёно."}
+            except Exception as e:
+                await session.rollback()
+                logging.error(f"Ошибка при запросе {cam_id}: {e}")
+                raise
+
+    @classmethod
+    async def movie_off(cls, cam_id):
+        """Movie to TG OFF"""
+        async with bot_session() as session:
+            try:
+                query = (
+                    update(DCamera)
+                    .where(DCamera.id == int(cam_id))
+                    .values(status_cam=False, send_video_tg=False)
+                )
+                await session.execute(query)
+                await session.commit()
+                return {"status": "ok", "message": f"Видео по камере {cam_id} отключёно."}
+            except Exception as e:
+                await session.rollback()
+                logging.error(f"Ошибка при запросе {cam_id}: {e}")
+                raise
+
+    @classmethod
+    async def screen_on(cls, cam_id: str) -> dict:
+        """Screen to TG ON"""
+        async with bot_session() as session:
+            try:
+                query = (
+                    update(DCamera)
+                    .where(DCamera.id == int(cam_id))
+                    .values(status_cam=True, screen_cam=True, send_tg=True)
+                )
+                await session.execute(query)
+                await session.commit()
+                return {"status": "ok", "message": f"Скриншот по камере {cam_id} включён."}
+            except Exception as e:
+                await session.rollback()
+                logging.error(f"Ошибка при запросе {cam_id}: {e}")
+                raise
+
+    @classmethod
+    async def screen_off(cls, cam_id: str):
+        """Screen to TG OFF"""
+        async with bot_session() as session:
+            try:
+                query = (
+                    update(DCamera)
+                    .where(DCamera.id == int(cam_id))
+                    .values(status_cam=False, screen_cam=False, send_tg=False)
+                )
+                await session.execute(query)
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                logging.error(f"Ошибка при запросе {cam_id}: {e}")
+                raise
 
     @classmethod
     async def exit_user_bot(cls, tg_id):
-        """Checks if user exists with the given username and password."""
-        async with new_session() as session:
+        """Exit from bot."""
+        async with bot_session() as session:
             q = select(DUser).where(and_(DUser.tg_id == tg_id))
             result = await session.execute(q)
             answer = result.scalars().first()
@@ -573,13 +627,3 @@ class Repo:
             answer.active = 0
             await session.commit()
             return answer
-
-
-    @classmethod
-    async def get_allowed_chat_ids(cls) -> list[int]:
-        """Select all users from DB where active is True"""
-        async with new_session() as session:
-            result = await session.execute(
-                select(DUser.tg_id).where(DUser.active == True)
-            )
-            return [row[0] for row in result.all() if row[0] is not None]
