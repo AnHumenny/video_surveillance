@@ -8,7 +8,7 @@ import cv2
 import nmap
 import asyncio
 from quart import (Quart, request, jsonify, render_template, make_response, Response, redirect, url_for, session, flash,
-    get_flashed_messages)
+                   get_flashed_messages)
 import signal
 from functools import wraps
 import jwt
@@ -409,13 +409,6 @@ async def edit_cam():
     return redirect(url_for("control"))
 
 
-@app.route('/logout')
-async def logout():
-    """exit"""
-    session.pop('token', None)
-    return redirect(url_for('login'))
-
-
 @app.route('/', methods=['GET'])
 async def index():
     """main page with camera selection."""
@@ -565,11 +558,12 @@ async def stop_recording_loop(cam_id):
     return jsonify({"status": "recording_stopped"})
 
 
-async def force_start_cam(cam_id):      #к боту
-    """Forcing the camera to start"""
+async def force_start_cam(cam_id):
+    """Forcing the camera to start(bot)"""
     await camera_manager.reinitialize_camera(cam_id)
 
 
+@token_required
 @app.route("/force_stop_cam/<cam_id>", methods=["GET"])
 async def force_stop_cam(cam_id):
     """Forcing the camera to stop"""
@@ -577,7 +571,16 @@ async def force_stop_cam(cam_id):
     return redirect(url_for('control'))
 
 
-@app.route("/health_server", methods=["POST"])    # в бота
+@token_required
+@app.route("/stop_all_cam")
+async def stop_all_cam():
+    """Forcing all_cameras to stop"""
+    await cleanup()
+    return redirect(url_for('logout'))
+
+
+@token_required
+@app.route("/health_server", methods=["POST"])
 async def health_server():
     if request.content_type == 'application/json':
         data = await request.get_json()
@@ -588,25 +591,49 @@ async def health_server():
     return jsonify({"task_id": task.id}, "success")
 
 
+@token_required_camera
+@app.route('/logout')
+async def logout():
+    """exit."""
+    resp = redirect(url_for('login'))
+    resp.delete_cookie("token", path="/", secure=True, httponly=True, samesite="Lax")
+    resp.delete_cookie("csrftoken", path="/", secure=True, httponly=True, samesite="None")
+    session.pop('token', None)
+    return resp
+
 shutdown_event = asyncio.Event()
 
 def handle_shutdown():
+    """signal handler for application shutdown."""
     logger.info("[INFO] Shutdown signal received")
     shutdown_event.set()
 
 
 async def shutdown_trigger():
+    """awaitable shutdown trigger for Hypercorn."""
     await shutdown_event.wait()
 
 
 async def cleanup():
+    """stop all cameras"""
     logger.info("[INFO] Cleanup starting...")
     for cam_id in list(camera_manager.cameras.keys()):
         await camera_manager._stop_camera_reader(cam_id)
+        await asyncio.sleep(2)
     logger.info("[INFO] All cameras stopped.")
+    return redirect(url_for('logout'))
+
+
+def _signal_handler(*_):
+    """Signals."""
+    shutdown_event.set()
 
 
 async def main(host: str, port: int, debug: bool = False):
+    loop = asyncio.get_running_loop()
+    loop.add_signal_handler(signal.SIGINT, _signal_handler)
+    loop.add_signal_handler(signal.SIGTERM, _signal_handler)
+
     config = Config()
     config.bind = [f"{host}:{port}"]
     config.debug = debug
@@ -618,8 +645,6 @@ async def main(host: str, port: int, debug: bool = False):
         logger.info("Cameras not initialized, app continues to launch.")
 
     await serve(app, config, shutdown_trigger=shutdown_trigger)
-
-    await cleanup()
 
 
 if __name__ == '__main__':

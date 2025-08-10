@@ -15,9 +15,12 @@
         <div class="header">
             <h5>Панель управления
                 <a href="{{ url_for('index') }}">
-                    <img src="{{ url_for('static', filename='image/home.png') }}" alt="Главная"></a>
-                <a href="{{ url_for('logout') }}">
-                    <img src="{{ url_for('static', filename='image/exit.png') }}" alt="Выйти"></a>
+                    <img src="{{ url_for('static', filename='image/home.png') }}" alt="Главная" title="Перейти на главную"></a>
+                <a id="logoutUser"  href="{{ url_for('logout') }}">
+                    <img src="{{ url_for('static', filename='image/exit.png') }}" alt="Выйти из админки" title="Выйти из админки"></a>
+                <a id="stopCamLink" href="{{ url_for('stop_all_cam') }}">
+                    <img src="{{ url_for('static', filename='image/stop.png') }}" alt="Выйти из программы" title="Закрыть программу">
+                </a>
             </h5>
         </div>
 

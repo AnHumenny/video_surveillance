@@ -78,6 +78,14 @@ class Repo:
             return result.scalars().all()
 
     @classmethod
+    async def select_id_cameras(cls):
+        """Select id cameras."""
+        async with new_session() as session:
+            q = select(DCamera.id)
+            result = await session.execute(q)
+            return result.scalars().all()
+
+    @classmethod
     async def select_ip_cameras(cls):
         """Select field ip from cameras.
 
