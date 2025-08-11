@@ -69,13 +69,13 @@ def token_required(func):
     async def wrapper(message: types.Message, state: FSMContext, *args, **kwargs):
         data = await state.get_data()
         token = data.get("jwt_token")
-        # status = data.get("status")
+        status = data.get("status")
         if not token:
             await message.answer("Нет сохранённого токена. Пройдите авторизацию через /start.")
             return None
-        # if status != "admin":
-        #     await message.answer("Недостаточно прав доступа.")
-        #     return None
+        if status != "admin":
+            await message.answer("Недостаточно прав доступа.")
+            return None
         decoded_data = await decode_jwt_token(token)
         if decoded_data:
             return await func(message, state=state, *args, **kwargs)
