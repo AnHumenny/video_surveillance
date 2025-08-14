@@ -10,6 +10,8 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from schemas.repository import Repo
 from logs.logging_config import logger
+
+
 class CameraManager:
     """Asynchronous manager that maintains exactly **one** VideoCapture per physical
     camera, runs a background reader task for each camera, and exposes the most
@@ -121,7 +123,8 @@ class CameraManager:
             cam_id: str,
             enable_motion: bool,
             save_screenshot: bool = False,
-            points: Optional[list[tuple[int, int]]] = None
+            points: Optional[list[tuple[int, int]]] = None,
+            reset_counter: bool = False
     ) -> Tuple[Optional[np.ndarray], Optional[str], Optional[str]]:
         """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
 
@@ -130,11 +133,17 @@ class CameraManager:
             enable_motion (bool): Whether to apply motion detection.
             save_screenshot (bool): Whether to save a screenshot on central motion detection.
             points: (list of tuple)
+            reset_counter: bool
         """
         cam_entry = self.cameras.get(cam_id)
         if not cam_entry:
             logger.error(f"[ERROR] Camera {cam_id} not running")
             return None, None, None
+
+        if reset_counter:
+            self.start_time = datetime.now().replace(microsecond=0)
+            self.count_object = 0
+            logger.info(f"[INFO] Счётчик объектов для камеры {cam_id} сброшен, дата начала изменена")
 
         queue: asyncio.Queue = cam_entry['queue']
         try:
@@ -168,8 +177,8 @@ class CameraManager:
             zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
             zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
 
-            min_area = 1500         # методом подбора (вынести в БД?)
-            max_dist = 70           # методом подбора (вынести в БД?)
+            min_area = 1500
+            max_dist = 70
             self.tracked_objects.setdefault(cam_id, {})
             object_data = self.tracked_objects[cam_id]
             should_record = False
@@ -295,30 +304,48 @@ class CameraManager:
 
     async def cleanup(self) -> None:
         """Stop all camera readers and release resources."""
-        for cam_id in list(self.cameras.keys()):
-            await self._stop_camera_reader(cam_id)
-        self.executor.shutdown(wait=True)
-        logger.info("All cameras cleaned up.")
+        logger.info("[INFO] Cleaning up camera manager...")
+
+        for cam_entry in self.cameras.values():
+            if "stop_event" in cam_entry:
+                cam_entry["stop_event"].set()
+
+        camera_tasks = [cam_entry["task"] for cam_entry in self.cameras.values() if "task" in cam_entry]
+        if camera_tasks:
+            await asyncio.gather(*camera_tasks, return_exceptions=True)
+
+        for cam_entry in self.cameras.values():
+            cap = cam_entry.get("cap")
+            if cap:
+                await asyncio.get_running_loop().run_in_executor(self.executor, cap.release)
+
+        self.cameras.clear()
+        logger.info("[INFO] All cameras stopped and cleaned up")
+
+        if hasattr(self, 'executor') and self.executor is not None:
+            logger.debug("[DEBUG] Shutting down executor")
+            self.executor.shutdown(wait=True)
+            logger.info("[INFO] Executor shutdown completed")
+
+        self.cameras.clear()
+        logger.info("[INFO] CameraManager cleanup done")
+        return
+
 
     async def _start_camera_reader(self, cam_id: str, url: str, timeout: int) -> None:
-        """Start the background reader task for a single camera.
-
-        Args:
-            cam_id (str): Camera ID.
-            url (str): Camera RTSP or HTTP stream URL.
-            timeout (int): Timeout for initial connection.
-        """
+        """Start the background reader task for a single camera."""
         cap = await self._safe_create_capture_with_timeout(cam_id, url, timeout)
         if cap is None:
             return
 
         queue: asyncio.Queue = asyncio.Queue(maxsize=self.max_queue_size)
-        self.cameras[cam_id] = {"cap": cap, "queue": queue}
+        stop_event = asyncio.Event()  # флаг для безопасного выхода
+        self.cameras[cam_id] = {"cap": cap, "queue": queue, "stop_event": stop_event}
 
         async def reader():
-            """Creating and initializing cv2.VideoCapture with timeout"""
+            """Camera reading loop with graceful shutdown"""
             loop = asyncio.get_running_loop()
-            while True:
+            while not stop_event.is_set():  # проверяем флаг вместо бесконечного цикла
                 def read():
                     ret, frm = cap.read()
                     return frm if ret else None
@@ -339,6 +366,8 @@ class CameraManager:
                 await queue.put(frame)
                 await asyncio.sleep(self.frame_period)
 
+            logger.info(f"[INFO] Camera {cam_id} reader exiting...")
+
         task = asyncio.create_task(reader(), name=f"reader-{cam_id}")
         self.cameras[cam_id]["task"] = task
         logger.info(f"[INFO] Camera {cam_id} reader started")
@@ -349,22 +378,33 @@ class CameraManager:
         Args:
             cam_id (str): Camera ID.
         """
+        logger.debug(f"[DEBUG] Stopping camera reader for {cam_id}")
         cam_entry = self.cameras.get(cam_id)
         if not cam_entry:
+            logger.warning(f"[WARNING] No camera entry for {cam_id}")
             return
         task: asyncio.Task = cam_entry.get("task")  # type: ignore
         cap: cv2.VideoCapture = cam_entry.get("cap")  # type: ignore
 
         if task:
+            logger.debug(f"[DEBUG] Cancelling task for camera {cam_id}")
             task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
-                pass
+                logger.debug(f"[DEBUG] Task for camera {cam_id} cancelled")
+            except Exception as e:
+                logger.error(f"[ERROR] Error cancelling task for {cam_id}: {e}", exc_info=True)
         if cap:
-            await asyncio.get_running_loop().run_in_executor(self.executor, cap.release)
-        logger.info(f"[INFO] Camera {cam_id} reader stopped")
+            logger.debug(f"[DEBUG] Releasing VideoCapture for camera {cam_id}")
+            try:
+                await asyncio.get_running_loop().run_in_executor(self.executor, cap.release)
+                logger.info(f"[INFO] Camera {cam_id} reader stopped")
+            except Exception as e:
+                logger.error(f"[ERROR] Error releasing VideoCapture for {cam_id}: {e}", exc_info=True)
         self.cameras.pop(cam_id, None)
+        logger.debug(f"[DEBUG] Camera {cam_id} removed from cameras")
+
 
     async def _safe_create_capture_with_timeout(self, cam_id: str, url: str, timeout: int):
         """Create cv2.VideoCapture with timeout and error handling.

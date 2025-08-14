@@ -235,6 +235,25 @@ async def update_route():
     return redirect(url_for('control'))
 
 
+@app.route('/clear_count', methods=['POST'])
+@token_required
+async def clear_count():
+    """Reset the camera counter."""
+    data = await request.form
+    cam_id = data.get("cam_id")
+    if not cam_id:
+        return "cam_id is required", 400
+    points = await Repo.select_coordinates_by_id(cam_id)
+    await camera_manager.get_frame_with_motion_detection(
+        cam_id,
+        enable_motion=True,
+        points=points,
+        reset_counter=True
+    )
+
+    return redirect(url_for('view_camera', cam_id=cam_id))
+
+
 @app.route('/scan_network_for_rtsp')
 @token_required
 async def scan_network_for_rtsp():
@@ -612,28 +631,24 @@ def handle_shutdown():
 async def shutdown_trigger():
     """awaitable shutdown trigger for Hypercorn."""
     await shutdown_event.wait()
+    logger.info("[INFO] Shutdown signal received, Hypercorn exiting...")
 
 
 async def cleanup():
     """stop all cameras"""
     logger.info("[INFO] Cleanup starting...")
+
     for cam_id in list(camera_manager.cameras.keys()):
         await camera_manager._stop_camera_reader(cam_id)
-        await asyncio.sleep(2)
-    logger.info("[INFO] All cameras stopped.")
+        await asyncio.sleep(3)
+
+    await camera_manager.cleanup()
+
+    logger.info("[INFO] All cameras stopped and tasks cancelled.")
     return redirect(url_for('logout'))
 
 
-def _signal_handler(*_):
-    """Signals."""
-    shutdown_event.set()
-
-
 async def main(host: str, port: int, debug: bool = False):
-    loop = asyncio.get_running_loop()
-    loop.add_signal_handler(signal.SIGINT, _signal_handler)
-    loop.add_signal_handler(signal.SIGTERM, _signal_handler)
-
     config = Config()
     config.bind = [f"{host}:{port}"]
     config.debug = debug
@@ -644,10 +659,14 @@ async def main(host: str, port: int, debug: bool = False):
     else:
         logger.info("Cameras not initialized, app continues to launch.")
 
-    await serve(app, config, shutdown_trigger=shutdown_trigger)
+    try:
+        await serve(app, config, shutdown_trigger=shutdown_trigger)
+    finally:
+        await camera_manager.cleanup()
+        logger.info("[INFO] All cameras stopped.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -660,5 +679,7 @@ if __name__ == '__main__':
             port=int(os.getenv("PORT", 8080))
         ))
     finally:
+        loop.run_until_complete(camera_manager.cleanup())
+        logger.info("[INFO] Cameras cleanup done")
         loop.close()
         logger.info("[INFO] Event loop closed")
