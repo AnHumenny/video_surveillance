@@ -20,12 +20,13 @@ from bot import lists
 from schemas.repository import  Userbot, Repo
 from dotenv import load_dotenv
 
-load_dotenv()
 API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
+
+load_dotenv()
 
 class AuthStates(StatesGroup):
     """States for authentication and output"""
@@ -276,7 +277,7 @@ async def cmd_logout(message: types.Message, state: FSMContext):
 
 
 async def main():
-    """start"""
+    """Start bot polling."""
     await dp.start_polling(bot)
 
 

@@ -26,6 +26,10 @@
         <div class="toolbar-buttons">
           <button onclick="captureScreenshot()" class="camera-btn" style="width: auto;">Сделать скриншот</button>
           <button onclick="toggleRecording('{{ cam_id }}')">Старт/Стоп запись</button>
+          <form action="{{ url_for('clear_count') }}" method="post" style="display:inline;">
+    <input type="hidden" name="cam_id" value="{{ cam_id }}">
+    <button type="submit" class="clear-btn">Сбросить счётчик</button>
+</form>
           <h4 style="margin: 0;">Камера {{ cam_id }}</h4>
         </div>
       </div>
