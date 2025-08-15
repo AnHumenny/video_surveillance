@@ -3,6 +3,11 @@ set -e
 
 source "$(dirname "$0")/.venv/bin/activate"
 
+mkdir -p logs
+
+LOG_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+CELERY_LOGFILE="logs/celery_${LOG_TIMESTAMP}.log"
+
 CLEANUP_DONE=0
 cleanup() {
     if [ "$CLEANUP_DONE" -eq 0 ]; then
@@ -40,6 +45,8 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
+exec > >(tee -a logs/start.log) 2>&1
+
 echo "[INFO] Terminating existing Celery workers..."
 pkill -f "celery -A celery_app.celery worker" || true
 sleep 2
@@ -61,12 +68,12 @@ python3 -m bot.app &
 BOT_PID=$!
 
 CELERY_NAME="worker_$(date +%s)_${RANDOM}_$$"
-echo "[INFO] Starting Celery worker..."
+echo "[INFO] Starting Celery worker with log file: $CELERY_LOGFILE"
 celery -A celery_app.celery worker \
     --loglevel=info \
     -n ${CELERY_NAME}@%h \
     --concurrency=1 \
-    --logfile=celery.log \
+    --logfile="$CELERY_LOGFILE" \
     --time-limit=300 \
     --soft-time-limit=280 &
 CELERY_PID=$!
