@@ -86,6 +86,15 @@ class Repo:
             return result.scalars().all()
 
     @classmethod
+    async def select_path_to_cam(cls, cam_id: int):
+        """Select path_to_cam for a specific camera by ID."""
+        async with new_session() as session:
+            q = select(DCamera.path_to_cam).where(DCamera.id == cam_id)
+            result = await session.execute(q)
+            return result.scalar_one_or_none()
+
+
+    @classmethod
     async def select_ip_cameras(cls):
         """Select field ip from cameras.
 
@@ -161,23 +170,55 @@ class Repo:
                                           ).values(cam_host=cam_host, subnet_mask=subnet_mask)
                 await session.execute(q)
                 await session.commit()
-                return f"Роут {cam_host} успешно обновлен!"
+                return f"Route {cam_host} updated succesfully!"
             except IntegrityError as e:
                 await session.rollback()
-                logger.error(f"[ERROR] Ошибка: Роут с адресом {cam_host} не обновился", e)
+                logger.error(f"[ERROR] Error: route with adresses {cam_host} not updated", e)
                 return False
 
             except Exception as e:
                 await session.rollback()
-                logger.error(f"[ERROR] Ошибка: {e}")
+                logger.error(f"[ERROR] Error: {e}")
                 return e
 
+    @classmethod
+    async def update_coord(cls, cam_id, **kwargs):
+        """Update coordinates camera"""
+        async with new_session() as session:
+            try:
+                coordinate_x1 = kwargs.get("coordinate_x1")
+                coordinate_y1 = kwargs.get("coordinate_y1")
+                coordinate_x2 = kwargs.get("coordinate_x2")
+                coordinate_y2 = kwargs.get("coordinate_y2")
 
+                if any(x is None for x in [coordinate_x1, coordinate_y1, coordinate_x2, coordinate_y2]):
+                    raise ValueError("The required coordinates are missing!")
+
+                q = (
+                    update(DCamera)
+                    .where(DCamera.id == cam_id)
+                    .values(
+                        coordinate_x1=coordinate_x1,
+                        coordinate_y1=coordinate_y1,
+                        coordinate_x2=coordinate_x2,
+                        coordinate_y2=coordinate_y2
+                    )
+                )
+                await session.execute(q)
+                await session.commit()
+                return f"Coordinates {cam_id} updates succesfully!!"
+            except IntegrityError as e:
+                await session.rollback()
+                logger.error(f"[ERROR] Error: coordinates {cam_id} not updated", e)
+                return False
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"[ERROR] Error: {e}")
+                return e
 
     @classmethod
     async def edit_camera(cls, ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
-                          send_mail, send_telegram, send_video_tg, coordinate_x1, coordinate_x2, coordinate_y1,
-                          coordinate_y2
+                          send_mail, send_telegram, send_video_tg
                           ):
         """Edit path to camera.
 
@@ -191,11 +232,6 @@ class Repo:
                 send_mail: bool
                 send_telegram: bool
                 send_video_tg: bool
-                coordinate_x1: str  (a.e. 224, 100)
-                coordinate_x2: str  (a.e. 224, 200)
-                coordinate_y1: str  (a.e. 300, 100)
-                coordinate_y2: str  (a.e. 400, 100)
-
             """
         async with (new_session() as session):
             ssid = int(ssid)
@@ -208,22 +244,18 @@ class Repo:
                                                    send_email=send_mail,
                                                    send_tg=send_telegram,
                                                    send_video_tg=send_video_tg,
-                                                   coordinate_x1=coordinate_x1,
-                                                   coordinate_x2=coordinate_x2,
-                                                   coordinate_y1=coordinate_y1,
-                                                   coordinate_y2=coordinate_y2,
                                                    )
                 await session.execute(q)
                 await session.commit()
-                return f"Камера {ssid} успешно обновлена!"
+                return f"Camera {ssid} updated succesfully!"
             except IntegrityError as e:
                 await session.rollback()
-                logger.error(f"[ERROR] Ошибка: Камера с адресом {ssid} не обновилась", e)
+                logger.error(f"[ERROR] Error: Camera with addresses {ssid} not updated", e)
                 return False
 
             except Exception as e:
                 await session.rollback()
-                logger.error(f"[ERROR] Ошибка: {e}")
+                logger.error(f"[ERROR] Error: {e}")
                 return e
 
 

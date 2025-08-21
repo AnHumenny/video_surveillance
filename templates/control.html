@@ -16,7 +16,7 @@
             <h5>Панель управления
                 <a href="{{ url_for('index') }}">
                     <img src="{{ url_for('static', filename='image/home.png') }}" alt="Главная" title="Перейти на главную"></a>
-                <a id="logoutUser"  href="{{ url_for('logout') }}">
+                <a id="logoutUser" href="{{ url_for('logout') }}">
                     <img src="{{ url_for('static', filename='image/exit.png') }}" alt="Выйти из админки" title="Выйти из админки"></a>
                 <a id="stopCamLink" href="{{ url_for('stop_all_cam') }}">
                     <img src="{{ url_for('static', filename='image/stop.png') }}" alt="Выйти из программы" title="Закрыть программу">
@@ -35,14 +35,16 @@
                         <input type="submit" value="Добавить">
                     </form>
                 </div>
+
                 <div style="display: flex; align-items: center;">
                     <div style="flex-grow: 1; border-bottom: 1px solid black;">&nbsp;</div>
                 </div>
+
                 <div class="add-camera">
                     <h5>Добавить камеру</h5>
                     <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 10px;">
                         <div>
-                        <label for="new_cam">Маршрут:</label>
+                            <label for="new_cam">Маршрут:</label>
                             <input type="text" name="new_cam" id="new_cam" placeholder="rtsp://user:password@192.168.1.4:554/" required>
                         </div>
                         <div style="display: flex; gap: 20px; align-items: center;">
@@ -69,6 +71,7 @@
                         </div>
                         <input type="submit" value="Добавить">
                     </form>
+
                     {% if get_flashed_messages(with_categories=True) %}
                         {% for category, message in get_flashed_messages(with_categories=True) %}
                             {% if category in ['camera_success', 'camera_error', 'rtsp_error'] %}
@@ -77,116 +80,164 @@
                         {% endfor %}
                     {% endif %}
                 </div>
+
                 <div style="display: flex; align-items: center;">
                     <div style="flex-grow: 1; border-bottom: 1px solid black;">&nbsp;</div>
                 </div>
+
                 <div class="add-user">
-    <h5>Добавить пользователя</h5>
-    <form method="post" action="{{ url_for('add_new_user') }}" enctype="multipart/form-data" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
-        <input type="text" name="new_user" id="new_user" placeholder="Имя пользователя" required>
-        <input type="text" name="new_password" id="new_password" placeholder="Пароль" required>
+                    <h5>Добавить пользователя</h5>
+                    <form method="post" action="{{ url_for('add_new_user') }}" enctype="multipart/form-data" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+                        <input type="text" name="new_user" id="new_user" placeholder="Имя пользователя" required>
+                        <input type="text" name="new_password" id="new_password" placeholder="Пароль" required>
+                        <input type="text" name="tg_id" id="tg_id" placeholder="Telegram ID" required>
+                        <label><input type="checkbox" name="active" value="0">Отправка в ТГ?</label>
+                        <select name="status" id="status" required>
+                            <option value="user">Пользователь</option>
+                            <option value="admin">Администратор</option>
+                        </select>
+                        <input type="submit" value="Добавить">
+                    </form>
 
-        <input type="text" name="tg_id" id="tg_id" placeholder="Telegram ID" required>
-        <label><input type="checkbox" name="active" value="0">Отправка в ТГ?</label>
+                    {% if get_flashed_messages(with_categories=True) %}
+                        {% for category, message in get_flashed_messages(with_categories=True) %}
+                            {% if category in ['user_success', 'user_error', 'user_deleted', 'admin_not_deleted', 'password_error'] %}
+                                <p class="message-{{ category }}">{{ message }}</p>
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
 
-        <select name="status" id="status" required>
-            <option value="user">Пользователь</option>
-            <option value="admin">Администратор</option>
-        </select>
-
-        <input type="submit" value="Добавить">
-    </form>
-
-    {% if get_flashed_messages(with_categories=True) %}
-        {% for category, message in get_flashed_messages(with_categories=True) %}
-            {% if category in ['user_success', 'user_error', 'user_deleted', 'admin_not_deleted', 'password_error'] %}
-                <p class="message-{{ category }}">{{ message }}</p>
-            {% endif %}
-        {% endfor %}
-    {% endif %}
-
-    {% for row in all_users %}
-        <div class="camera-item">
-            {{ row.id }} || {{ row.user }} || {{ row.status }}
-            <a href="{{ url_for('delete_user', ssid=row.id) }}">
-                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить">
-            </a>
-        </div>
-    {% endfor %}
-        </div>
+                    {% for row in all_users %}
+                        <div class="camera-item">
+                            {{ row.id }} || {{ row.user }} || {{ row.status }}
+                            <a href="{{ url_for('delete_user', ssid=row.id) }}">
+                                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить">
+                            </a>
+                        </div>
+                    {% endfor %}
+                </div>
             </div>
 
             <div class="right-column">
                 <div class="camera-list">
-                    <button onclick="scanRTSP()">Сканировать сеть</button>
-                        <ul id="rtsp-list"></ul>
-                            <script>
-                                async function scanRTSP() {
-                                    try {
-                                        const response = await fetch('/scan_network_for_rtsp', {
-                                            headers: {
-                                                'Authorization': 'Bearer ' + localStorage.getItem('token')
-                                            }
-                                        });
-                                    if (!response.ok) {
-                                        throw new Error(`Ошибка: ${response.statusText}`);
-                                    }
-                                    const devices = await response.json();
-                                    const listElement = document.getElementById('rtsp-list');
-                                    listElement.innerHTML = '';
-                                    if (devices.length === 0) {
-                                        listElement.innerHTML = '<li>Ничего не найдено</li>';
-                                    } else {
-                                    devices.forEach(device => {
-                                        const item = document.createElement('li');
-                                        item.textContent = `IP: ${device.ip}, Порт: ${device.port}`;
-                                        listElement.appendChild(item);
-                                    });
-                                }
-                                } catch (err) {
-                                alert('Ошибка при сканировании: ' + err.message);
-                                }
-                            }
-                        </script>
-                    <br>
-                    =================================
-                    <h5>Список камер</h5>
+                   <button id="scan-btn" onclick="scanRTSP()">Сканировать сеть</button>
+                       <ul id="rtsp-list"></ul>
+
+<script>
+async function scanRTSP() {
+    const btn = document.getElementById('scan-btn');
+    const listElement = document.getElementById('rtsp-list');
+
+    btn.disabled = true;
+    btn.textContent = 'Сканирование...';
+    listElement.innerHTML = '<li>Сканирование...</li>';
+
+    try {
+        const response = await fetch('/scan_network_for_rtsp', {
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('token')
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Ошибка: ${response.statusText}`);
+        }
+
+        const devices = await response.json();
+        listElement.innerHTML = '';
+
+        if (devices.length === 0) {
+            listElement.innerHTML = '<li>Ничего не найдено</li>';
+        } else {
+            devices.forEach(device => {
+                const item = document.createElement('li');
+                const address = `${device.ip}:${device.port}`;
+                item.textContent = `IP: ${device.ip}, Порт: ${device.port} `;
+
+                const sendBtn = document.createElement('button');
+                sendBtn.textContent = 'Добавить (без логина и пароля)';
+                sendBtn.onclick = () => sendToAddCamera(address);
+
+                item.appendChild(sendBtn);
+                listElement.appendChild(item);
+            });
+        }
+    } catch (err) {
+        listElement.innerHTML = '';
+        alert('Ошибка при сканировании: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Сканировать сеть';
+    }
+}
+
+async function sendToAddCamera(address) {
+    try {
+        const formData = new FormData();
+        formData.append("new_cam", `rtsp://${address}`);
+        formData.append("motion_detection", "1");
+        formData.append("visible_cam", "1");
+        formData.append("screen_cam", "0");
+        formData.append("send_email", "0");
+        formData.append("send_tg", "0");
+
+        const response = await fetch('/add_camera', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('token')
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`Ошибка: ${response.statusText}`);
+        }
+
+        alert(`Камера ${address} успешно добавлена`);
+        location.reload();
+    } catch (err) {
+        alert('Ошибка при добавлении: ' + err.message);
+    }
+}
+</script>
+          <br>
+               <h5>Список камер</h5>
                     {% for row in all_cameras %}
                         <div class="camera-item">
                             {% if not row.visible_cam %}
-                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Камера отключена">
+                                <img src="{{ url_for('static', filename='image/no.png') }}" title="Камера отключена">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/yes.png') }}" title="Камера включена">
-                            {% endif %} &nbsp;&nbsp;
+                                <img src="{{ url_for('static', filename='image/yes.png') }}" title="Камера включена">
+                            {% endif %}
                             {% if not row.status_cam %}
-                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Детекция движения отключена">
+                                <img src="{{ url_for('static', filename='image/no.png') }}" title="Детекция движения отключена">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/motion.png') }}" title="Детекция движения включена">
+                                <img src="{{ url_for('static', filename='image/motion.png') }}" title="Детекция движения включена">
                             {% endif %}
                             {% if not row.screen_cam %}
-                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Скриншот отключён">
+                                <img src="{{ url_for('static', filename='image/no.png') }}" title="Скриншот отключён">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/screen.png') }}" title="Скриншот включён">
+                                <img src="{{ url_for('static', filename='image/screen.png') }}" title="Скриншот включён">
                             {% endif %}
                             {% if not row.send_email %}
-                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Тревожный по email отключён!">
+                                <img src="{{ url_for('static', filename='image/no.png') }}" title="Тревожный по email отключён!">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/email.png') }}" title="Тревожный по email включён">
+                                <img src="{{ url_for('static', filename='image/email.png') }}" title="Тревожный по email включён">
                             {% endif %}
                             {% if not row.send_tg %}
-                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Тревожный по tg отключён!">
+                                <img src="{{ url_for('static', filename='image/no.png') }}" title="Тревожный по tg отключён!">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/tg.png') }}" title="Тревожный по tg включён">
+                                <img src="{{ url_for('static', filename='image/tg.png') }}" title="Тревожный по tg включён">
                             {% endif %}
                             {% if not row.send_video_tg %}
-                            <img src="{{ url_for('static', filename='image/no.png') }}" title="Видео в tg отключён!">
+                                <img src="{{ url_for('static', filename='image/no.png') }}" title="Видео в tg отключён!">
                             {% else %}
-                            <img src="{{ url_for('static', filename='image/tg_video.png') }}" title="Видео в tg включён">
+                                <img src="{{ url_for('static', filename='image/tg_video.png') }}" title="Видео в tg включён">
                             {% endif %}
                             <a href="http://{{ host }}:{{ port }}/view/{{ row.id }}">{{ masked_urls[row.id] }}</a>
                             <a href="#" onclick="reinitializeCamera('{{ row.id }}')">
                                 <img src="{{ url_for('static', filename='image/update.png') }}" alt="Переинициализировать" title="Переинициализировать">
-                            </a> &nbsp;
+                            </a>
                             <a href="#" onclick="openEditPanel(
                                 '{{ row.id }}',
                                 '{{ row.path_to_cam }}',
@@ -198,106 +249,213 @@
                             )">
                                 <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать" title="Редактировать маршрут">
                             </a>
-                            <a href="{{ url_for('delete_camera', ssid=row.id) }}">
-                                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить" title="Удалить"></a>
-                            <a href="{{ url_for('force_stop_cam', cam_id=row.id) }}">
-                                <img src="{{ url_for('static', filename='image/photocamera-cancel.png') }}" alt="Остановить камеру" title="Остановить камеру"></a>
-                            </div>
-                        {% endfor %}
-                    </div>
-                </div>
-        </div>
 
-        <div id="editPanel" class="slide-panel">
-            <div class="panel-content">
-                <h5>Редактировать маршрут камеры</h5>
-                <form id="editForm" method="POST">
-                    <div class="coordinate-row">
-                        <label for="coordinate_x1">Верхний левый:</label>
-                            <input type="text" id="coordinate_x1" name="coordinate_x1" required pattern="^\d{1,4},\s?\d{1,4}$"
-                                   title="Введите два числа, разделённых запятой, например: 245, 124" >
-                        <label for="coordinate_x2">Верхний правый:</label>
-                             <input type="text" id="coordinate_x2" name="coordinate_x2" required pattern="^\d{1,4},\s?\d{1,4}$"
-                                   title="Введите два числа, разделённых запятой, например: 245, 224" >
-                        <label for="coordinate_y1">Нижний левый:</label>
-                             <input type="text" id="coordinate_y1" name="coordinate_y1" required pattern="^\d{1,4},\s?\d{1,4}$"
-                                    title="Введите два числа, разделённых запятой, например: 335, 200" >
-                        <label for="coordinate_y2">Нижний правый:</label>
-                            <input type="text" id="coordinate_y2" name="coordinate_y2" required pattern="^\d{1,4},\s?\d{1,4}$"
-                                   title="Введите два числа, разделённых запятой, например: 435, 200" >
-                    </div>
-                    <label for="cameraId">ID камеры:</label>
-                    <input type="text" id="cameraId" name="cameraId" readonly>
-                    <label for="cameraPath">Маршрут камеры:</label>
-                    <input type="text" id="cameraPath" name="cameraPath" required>
-                    <label for="motion_detection">Видимость камеры:</label>
-                    <input type="checkbox" name="visible_camera" id="visible_camera" readonly checked onclick="return false">
-                    <label for="motion_detection">Детекция движения:</label>
-                    <input type="checkbox" name="motion_detect" id="motion_detect" value="motion_detect">
-                    <label for="screen_cam">Скриншот:</label>
-                    <input type="checkbox" name="screen_cam" id="screen_camera" value="screen_camera">
-                    <label for="send_mail">Скрин по email:</label>
-                    <input type="checkbox" name="send_mail" id="send_mail" value="send_mail">
-                    <label for="send_telegram">Скрин в Telegram:</label>
-                    <input type="checkbox" name="send_telegram" id="send_telegram" value="send_telegram">
-                    <label for="send_video_tg">Видео в Telegram:</label>
-                    <input type="checkbox" name="send_video_tg" id="send_video_tg" value="send_video_tg">
-                    <div style="text-align: right; margin-top: 10px;">
-                        <button type="button" class="btn-cancel" onclick="closeEditPanel()">Отмена</button>
-                        <button type="submit" class="btn-save">Сохранить</button>
-                    </div>
-                </form>
-                    {% if category in ['cam_true', 'rtsp_error'] %}
-                        <p class="message-{{ category }}">{{ message }}</p>
-                    {% endif %}
+                            <a href="{{ url_for('delete_camera', ssid=row.id) }}">
+                                <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить" title="Удалить">
+                            </a>
+                            <a href="{{ url_for('force_stop_cam', cam_id=row.id) }}">
+                                <img src="{{ url_for('static', filename='image/photocamera-cancel.png') }}" alt="Остановить камеру" title="Остановить камеру">
+                            </a>
+                        </div>
+                    {% endfor %}
                 </div>
             </div>
-        {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<div id="editPanel" class="slide-panel">
+    <div class="panel-content">
+        <div style="position: relative; display: inline-block; margin-top: 10px;">
+            <img id="snapshot_edit" src="" style="max-width:100%;">
+            <canvas id="overlay_edit" style="position:absolute; left:0; top:0;"></canvas>
+        </div>
+
+        <div style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 10px;">
+            <label>X1,Y1: <input type="text" id="coord_x1" value="0,0"></label>
+            <label>X2,Y2: <input type="text" id="coord_x2" value="0,0"></label>
+            <label>Y1,Y2: <input type="text" id="coord_y1" value="0,0"></label>
+            <label>Y3,Y4: <input type="text" id="coord_y2" value="0,0"></label>
+            <button type="button" onclick="updatePointsFromFields()">Обновить точки</button>
+        </div>
+
+        <div style="margin-top: 10px;">
+            <button type="button" onclick="clearPoints()">Очистить canvas</button>
+            <button type="button" onclick="sendCoordinates()">Сохранить координаты</button>
+            <div id="saveMessage" style="display:none; color: green; margin-top: 5px;"></div>
+        </div>
+
+        <form id="editForm" method="POST" style="margin-top: 10px;">
+            <label for="cameraId">ID камеры:</label>
+            <input type="text" id="cameraId" name="cameraId" readonly>
+
+            <label for="cameraPath">Маршрут камеры(пример): <br>rtsp://user:password@192.168.1.34:554</label>
+            <input type="text" id="cameraPath" name="cameraPath" required>
+
+            <label for="visible_camera">Видимость камеры:</label>
+            <input type="checkbox" name="visible_camera" id="visible_camera" readonly checked onclick="return false">
+
+            <label for="motion_detect">Детекция движения:</label>
+            <input type="checkbox" name="motion_detect" id="motion_detect">
+
+            <label for="screen_camera">Скриншот:</label>
+            <input type="checkbox" name="screen_cam" id="screen_camera">
+
+            <label for="send_mail">Скрин по email:</label>
+            <input type="checkbox" name="send_mail" id="send_mail">
+
+            <label for="send_telegram">Скрин в Telegram:</label>
+            <input type="checkbox" name="send_telegram" id="send_telegram">
+
+            <label for="send_video_tg">Видео в Telegram:</label>
+            <input type="checkbox" name="send_video_tg" id="send_video_tg">
+
+            <div style="text-align: right; margin-top: 10px;">
+                <button type="button" class="btn-cancel" onclick="closeEditPanel()">Отмена</button>
+                <button type="submit" class="btn-save">Сохранить</button>
+            </div>
+        </form>
     </div>
+</div>
 
 <script>
-    async function openEditPanel(id, path, coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2,
-        endpoint) {
+
+const imgEdit = document.getElementById("snapshot_edit");
+const canvasEdit = document.getElementById("overlay_edit");
+const ctxEdit = canvasEdit.getContext("2d");
+let points = [];
+
+function resizeCanvas() {
+    canvasEdit.width = imgEdit.clientWidth;
+    canvasEdit.height = imgEdit.clientHeight;
+}
+imgEdit.onload = resizeCanvas;
+window.onresize = resizeCanvas;
+
+canvasEdit.addEventListener("click", function(event) {
+    if (points.length >= 4) return;
+    const rect = canvasEdit.getBoundingClientRect();
+
+    const scaleX = imgEdit.naturalWidth / rect.width;
+    const scaleY = imgEdit.naturalHeight / rect.height;
+
+    const x = Math.round((event.clientX - rect.left) * scaleX);
+    const y = Math.round((event.clientY - rect.top) * scaleY);
+
+    points.push({x, y});
+    updateFieldsFromPoints();
+    drawPoints();
+});
+
+function drawPoints() {
+    ctxEdit.clearRect(0, 0, canvasEdit.width, canvasEdit.height);
+
+    const scaleX = canvasEdit.width / imgEdit.naturalWidth;
+    const scaleY = canvasEdit.height / imgEdit.naturalHeight;
+
+    ctxEdit.fillStyle = "red";
+
+    for (let p of points) {
+        const px = p.x * scaleX;
+        const py = p.y * scaleY;
+
+        ctxEdit.beginPath();
+        ctxEdit.arc(px, py, 4, 0, Math.PI * 2);
+        ctxEdit.fill();
+    }
+
+    if (points.length >= 2) {
+        ctxEdit.strokeStyle = "lime";
+        ctxEdit.lineWidth = 2;
+        ctxEdit.beginPath();
+        ctxEdit.moveTo(points[0].x * scaleX, points[0].y * scaleY);
+        for (let i = 1; i < points.length; i++) {
+            ctxEdit.lineTo(points[i].x * scaleX, points[i].y * scaleY);
+        }
+        if (points.length === 4) ctxEdit.closePath();
+        ctxEdit.stroke();
+    }
+}
+
+function clearPoints() {
+    points = [];
+    ctxEdit.clearRect(0, 0, canvasEdit.width, canvasEdit.height);
+    updateFieldsFromPoints();
+}
+
+function parseCoord(str) {
+    const [x, y] = str.split(',').map(n => parseInt(n.trim()));
+    return {x, y};
+}
+
+function updatePointsFromFields() {
+    points = [
+        parseCoord(document.getElementById('coord_x1').value),
+        parseCoord(document.getElementById('coord_x2').value),
+        parseCoord(document.getElementById('coord_y1').value),
+        parseCoord(document.getElementById('coord_y2').value)
+    ];
+    drawPoints();
+}
+
+function updateFieldsFromPoints() {
+    document.getElementById('coord_x1').value = points[0] ? `${points[0].x},${points[0].y}` : '0,0';
+    document.getElementById('coord_x2').value = points[1] ? `${points[1].x},${points[1].y}` : '0,0';
+    document.getElementById('coord_y1').value = points[2] ? `${points[2].x},${points[2].y}` : '0,0';
+    document.getElementById('coord_y2').value = points[3] ? `${points[3].x},${points[3].y}` : '0,0';
+}
+
+function openEditPanel(id, path, coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2, endpoint) {
     const panel = document.getElementById('editPanel');
     const form = document.getElementById('editForm');
-    const idInput = document.getElementById('cameraId');
-    const pathInput = document.getElementById('cameraPath');
-
-    const coordX1Input = document.getElementById('coordinate_x1');
-    const coordX2Input = document.getElementById('coordinate_x2');
-    const coordY1Input = document.getElementById('coordinate_y1');
-    const coordY2Input = document.getElementById('coordinate_y2');
-
-    idInput.value = id;
-    pathInput.value = path;
+    document.getElementById('cameraId').value = id;
+    document.getElementById('cameraPath').value = path;
     form.action = endpoint;
 
-    coordX1Input.value = coordinate_x1 || '0, 0';
-    coordX2Input.value = coordinate_x2 || '0, 0';
-    coordY1Input.value = coordinate_y1 || '0, 0';
-    coordY2Input.value = coordinate_y2 || '0, 0';
+    points = [
+        parseCoord(coordinate_x1 || '0,0'),
+        parseCoord(coordinate_x2 || '0,0'),
+        parseCoord(coordinate_y1 || '0,0'),
+        parseCoord(coordinate_y2 || '0,0')
+    ];
+    updateFieldsFromPoints();
+    drawPoints();
 
+    imgEdit.src = `/camera_snapshot?cam_id=${id}`;
     panel.classList.add('open');
 }
-</script>
 
-<script>
-    async function reinitializeCamera(camId) {
+function closeEditPanel() {
+    document.getElementById('editPanel').classList.remove('open');
+}
+
+function sendCoordinates() {
+    const camId = document.getElementById("cameraId").value;
+    fetch("/save_camera_zone", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({cam_id: camId, points})
+    })
+    .then(r => r.json())
+    .then(d => {
+        const msgDiv = document.getElementById("saveMessage");
+        msgDiv.textContent = d.message;
+        msgDiv.style.display = "block";
+        console.log("Сохранено:", d);
+    })
+    .catch(err => alert("Ошибка сохранения: " + err.message));
+}
+
+async function reinitializeCamera(camId) {
     try {
         const response = await fetch(`/reinitialize/${camId}`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: {'Content-Type': 'application/json'}
         });
         const result = await response.json();
-        if (result.success) {
-            alert(`Камера ${camId} успешно переинициализирована`);
-        } else {
-            alert(`Ошибка переинициализации камеры ${camId}: ${result.error}`);
-        }
+        alert(result.success ? `Камера ${camId} переинициализирована` : `Ошибка: ${result.error}`);
     } catch (error) {
-        alert(`Ошибка при отправке запроса: ${error.message}`);
+        alert(`Ошибка запроса: ${error.message}`);
     }
 }
 </script>

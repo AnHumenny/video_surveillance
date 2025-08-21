@@ -1,3 +1,4 @@
+import io
 import os
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
@@ -8,7 +9,7 @@ import cv2
 import nmap
 import asyncio
 from quart import (Quart, request, jsonify, render_template, make_response, Response, redirect, url_for, session, flash,
-                   get_flashed_messages)
+                   get_flashed_messages, send_file)
 import signal
 from functools import wraps
 import jwt
@@ -402,7 +403,6 @@ async def add_new_user():
 async def edit_cam():
     """editing the path to camera."""
     form_data = await request.form
-    print(dict(form_data))
     ssid = form_data.get("cameraId")
     path_to_cam = form_data.get("cameraPath")
     motion_detection = 1 if form_data.get("motion_detect") else 0
@@ -411,18 +411,12 @@ async def edit_cam():
     send_mail = 1 if form_data.get("send_mail") else 0
     send_telegram = 1 if form_data.get("send_telegram") else 0
     send_video_tg = 1 if form_data.get("send_video_tg") else 0
-    coordinate_x1 = form_data.get("coordinate_x1")
-    coordinate_x2 = form_data.get("coordinate_x2")
-    coordinate_y1 = form_data.get("coordinate_y1")
-    coordinate_y2 = form_data.get("coordinate_y2")
-
     query = await check_rtsp(path_to_cam)
     if query is False:
         await flash("Error: Incorrect RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
     await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
                            send_mail, send_telegram, send_video_tg,
-                           coordinate_x1, coordinate_x2, coordinate_y1, coordinate_y2,
                            )
     await flash("Camera updated successfully!", "user_success")
     return redirect(url_for("control"))
@@ -561,6 +555,62 @@ async def take_screenshot(cam_id):
     return jsonify({"status": "ok", "filename": filename})
 
 
+@app.route("/camera_snapshot", methods=['GET'])
+@token_required
+async def camera_snapshot():
+    cam_id = request.args.get("cam_id")
+    result = await Repo.select_path_to_cam(int(cam_id))
+    cap = cv2.VideoCapture(result)
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        return "Error receiving frame", 500
+    _, buffer = cv2.imencode('.jpg', frame)
+    return await send_file(io.BytesIO(buffer.tobytes()), mimetype='image/jpeg')
+
+
+@app.route("/save_camera_zone", methods=['POST'])
+@token_required
+async def save_camera_zone():
+    data = await request.get_json()
+    points = data.get("points")
+    cam_id = data.get("cam_id")
+
+    try:
+        processed_points = []
+        for point in points:
+            if not isinstance(point, dict) or 'x' not in point or 'y' not in point:
+                return jsonify({"message": "Invalid coordinate format, expected{'x': int, 'y': int}"}), 400
+            x, y = int(point['x']), int(point['y'])
+            processed_points.append((x, y))
+    except (ValueError, TypeError):
+        return jsonify({"message": "Coordinates must be integers."}), 400
+
+    coordinates = []
+    for i, (x, y) in enumerate(processed_points, 1):
+        var_name = f"coord_{i}"
+        exec(f"{var_name} = ({x}, {y})")
+        coordinates.append((x, y))
+
+    update_data = {
+        "cam_id": cam_id,
+        "coordinate_x1": f"{coordinates[0][0]}, {coordinates[0][1]}",
+        "coordinate_y1": f"{coordinates[0][0]}, {coordinates[0][1]}",
+        "coordinate_x2": f"{coordinates[2][0]}, {coordinates[2][1]}",
+        "coordinate_y2": f"{coordinates[2][0]}, {coordinates[2][1]}",
+    }
+
+    result = await Repo.update_coord(**update_data)
+
+    if result is False:
+        return jsonify({"message": "Coordinate update error"}), 500
+    elif isinstance(result, Exception):
+        return jsonify({"message": f"Error: {str(result)}"}), 500
+    else:
+        logger.info("[INFO] Coordinates saved")
+        return jsonify({"message": result, "coordinates": coordinates}), 200
+
+
 @app.route("/start_recording_loop/<cam_id>", methods=["POST"])
 @token_required_camera
 async def start_recording_loop(cam_id):
@@ -595,7 +645,7 @@ async def force_stop_cam(cam_id):
 async def stop_all_cam():
     """Forcing all_cameras to stop"""
     await cleanup()
-    return redirect(url_for('logout'))
+    return {"status": "all cameras stopped"}
 
 
 @token_required
@@ -674,12 +724,53 @@ if __name__ == "__main__":
         loop.add_signal_handler(sig, handle_shutdown)
 
     try:
-        loop.run_until_complete(main(
+        loop.run_until_complete(main(                           #  Segmentation fault  при выключении :(   ->
             host=os.getenv('HOST', '0.0.0.0'),
             port=int(os.getenv("PORT", 8080))
         ))
+    except Exception as e:
+        logger.exception("[ERROR] Exception in main: %s", e)
+
     finally:
-        loop.run_until_complete(camera_manager.cleanup())
-        logger.info("[INFO] Cameras cleanup done")
-        loop.close()
-        logger.info("[INFO] Event loop closed")
+        try:
+            pending = asyncio.all_tasks(loop)
+            if pending:
+                logger.debug("[DEBUG] Cancelling %d pending tasks", len(pending))
+                for t in pending:
+                    t.cancel()
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception as e:
+            logger.exception("[WARN] Error while cancelling pending tasks: %s", e)
+
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception as e:
+            logger.exception("[WARN] Error while shutting down asyncgens: %s", e)
+
+        try:
+            loop.run_until_complete(loop.shutdown_default_executor())
+        except Exception as e:
+            logger.exception("[WARN] Error while shutting down default executor: %s", e)
+
+        try:
+            if hasattr(camera_manager, "executor") and camera_manager.executor is not None:
+                logger.debug("[DEBUG] Shutting down CameraManager.executor synchronously")
+                try:
+                    camera_manager.executor.shutdown(wait=True, cancel_futures=True)
+                except TypeError:
+                    camera_manager.executor.shutdown(wait=True)
+                logger.info("[INFO] CameraManager.executor shutdown completed")
+        except Exception as e:
+            logger.exception("[WARN] Error while shutting down camera_manager.executor: %s", e)
+
+        try:
+            loop.run_until_complete(camera_manager.cleanup())
+            logger.info("[INFO] Cameras cleanup done")
+        except Exception as e:
+            logger.exception("[ERROR] Exception during camera_manager.cleanup(): %s", e)
+
+        try:
+            loop.close()
+            logger.info("[INFO] Event loop closed")
+        except Exception as e:
+            logger.exception("[WARN] Error while closing event loop: %s", e)
