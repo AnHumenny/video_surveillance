@@ -216,7 +216,8 @@
     transform: translateY(100%);
     transition: transform 0.3s ease-in-out;
     z-index: 1000;
-    max-height: 50vh;
+    max-height: 100vh;
+    width: 40%;
     overflow-y: auto;
   }
 
@@ -341,4 +342,26 @@
     width: 120px;
     padding: 25px;
   }
+
+  #editPanel {
+        display: none;
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 400px;
+        height: 100%;
+        background: #fff;
+        box-shadow: -2px 0 8px rgba(0,0,0,0.2);
+        padding: 20px;
+        overflow-y: auto;
+        z-index: 1000;
+    }
+
+    #editPanel.open {
+        display: block;
+    }
+
+    #rtsp-list li {
+    margin-bottom: 12px;
+}
 </style>

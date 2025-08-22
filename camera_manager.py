@@ -339,13 +339,13 @@ class CameraManager:
             return
 
         queue: asyncio.Queue = asyncio.Queue(maxsize=self.max_queue_size)
-        stop_event = asyncio.Event()  # флаг для безопасного выхода
+        stop_event = asyncio.Event()
         self.cameras[cam_id] = {"cap": cap, "queue": queue, "stop_event": stop_event}
 
         async def reader():
             """Camera reading loop with graceful shutdown"""
             loop = asyncio.get_running_loop()
-            while not stop_event.is_set():  # проверяем флаг вместо бесконечного цикла
+            while not stop_event.is_set():
                 def read():
                     ret, frm = cap.read()
                     return frm if ret else None
