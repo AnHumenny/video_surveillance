@@ -1,5 +1,7 @@
 import io
 import os
+import subprocess
+
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 import hashlib
@@ -21,6 +23,7 @@ from camera_manager import CameraManager
 from logs.logging_config import logger
 
 load_dotenv()
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 os.environ[
     "OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|buffer_size;4194304|timeout;10000000|flags;discardcorrupt"
@@ -685,18 +688,10 @@ async def shutdown_trigger():
 
 
 async def cleanup():
-    """stop all cameras"""
-    logger.info("[INFO] Cleanup starting...")
-
-    for cam_id in list(camera_manager.cameras.keys()):
-        await camera_manager._stop_camera_reader(cam_id)
-        await asyncio.sleep(3)
-
-    await camera_manager.cleanup()
-
-    logger.info("[INFO] All cameras stopped and tasks cancelled.")
-
-    return redirect(url_for('logout'))
+    """Shutdown"""
+    logger.info("[INFO] Shutdown...")
+    stop_sh_path = os.path.join(script_dir, "stop.sh")
+    subprocess.run([stop_sh_path])
 
 
 async def main(host: str, port: int, debug: bool = False):
@@ -713,7 +708,6 @@ async def main(host: str, port: int, debug: bool = False):
     try:
         await serve(app, config, shutdown_trigger=shutdown_trigger)
     finally:
-        await camera_manager.cleanup()
         logger.info("[INFO] All cameras stopped.")
 
 
@@ -722,56 +716,15 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, handle_shutdown)
+        loop.add_signal_handler(sig, loop.stop)
 
     try:
-        loop.run_until_complete(main(                           #  Segmentation fault  при выключении :(   ->
-            host=os.getenv('HOST', '0.0.0.0'),
-            port=int(os.getenv("PORT", 8080))
-        ))
-    except Exception as e:
-        logger.exception("[ERROR] Exception in main: %s", e)
-
+        loop.run_until_complete(
+            main(
+                host=os.getenv('HOST', '0.0.0.0'),
+                port=int(os.getenv("PORT", 8080))
+            )
+        )
     finally:
-        try:
-            pending = asyncio.all_tasks(loop)
-            if pending:
-                logger.debug("[DEBUG] Cancelling %d pending tasks", len(pending))
-                for t in pending:
-                    t.cancel()
-                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        except Exception as e:
-            logger.exception("[WARN] Error while cancelling pending tasks: %s", e)
-
-        try:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        except Exception as e:
-            logger.exception("[WARN] Error while shutting down asyncgens: %s", e)
-
-        try:
-            loop.run_until_complete(loop.shutdown_default_executor())
-        except Exception as e:
-            logger.exception("[WARN] Error while shutting down default executor: %s", e)
-
-        try:
-            if hasattr(camera_manager, "executor") and camera_manager.executor is not None:
-                logger.debug("[DEBUG] Shutting down CameraManager.executor synchronously")
-                try:
-                    camera_manager.executor.shutdown(wait=True, cancel_futures=True)
-                except TypeError:
-                    camera_manager.executor.shutdown(wait=True)
-                logger.info("[INFO] CameraManager.executor shutdown completed")
-        except Exception as e:
-            logger.exception("[WARN] Error while shutting down camera_manager.executor: %s", e)
-
-        try:
-            loop.run_until_complete(camera_manager.cleanup())
-            logger.info("[INFO] Cameras cleanup done")
-        except Exception as e:
-            logger.exception("[ERROR] Exception during camera_manager.cleanup(): %s", e)
-
-        try:
-            loop.close()
-            logger.info("[INFO] Event loop closed")
-        except Exception as e:
-            logger.exception("[WARN] Error while closing event loop: %s", e)
+        loop.close()
+        logger.info("[INFO] Event loop closed")
