@@ -695,6 +695,7 @@ async def cleanup():
     await camera_manager.cleanup()
 
     logger.info("[INFO] All cameras stopped and tasks cancelled.")
+
     return redirect(url_for('logout'))
 
 
