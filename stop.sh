@@ -8,7 +8,7 @@ sleep 2
 
 echo "[INFO] Shutting down Celery workers..."
 celery -A celery_app.celery control shutdown || echo "[WARNING] Celery shutdown failed, workers may already be stopped."
-sleep 10
+sleep 5
 if pgrep -f "celery -A celery_app.celery worker" > /dev/null 2>&1; then
     echo "[INFO] Celery processes still running, sending SIGTERM..."
     pkill -f "celery -A celery_app.celery worker" || true
@@ -44,7 +44,14 @@ if pgrep -f "bot.app" > /dev/null; then
 fi
 
 echo "[INFO] All processes stopped."
-ps aux | grep python3 | grep -v grep || true
-ps aux | grep celery | grep -v grep || true
+
+echo "[INFO] Active python3 processes:"
+pgrep -af python3 || echo "[INFO] No python3 processes."
+
+echo "[INFO] Active celery processes:"
+pgrep -af celery || echo "[INFO] No celery processes."
+
+echo "[INFO] Active bot.app processes:"
+pgrep -af "bot.app" || echo "[INFO] No bot.app processes."
 
 exit 0

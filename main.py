@@ -43,13 +43,6 @@ async def setup_camera_manager():
     await camera_manager.initialize()
 
 
-@app.after_serving
-async def shutdown_camera_manager():
-    global camera_manager
-    if camera_manager:
-        await camera_manager.cleanup()
-
-
 async def generate_frames(cap, cam_id):
     """frame streaming generator"""
     while True:
@@ -499,8 +492,6 @@ async def reload_cameras():
     """reload all cameras"""
     global camera_manager
     try:
-        if camera_manager:
-            await camera_manager.cleanup()
         camera_manager = CameraManager()
         await camera_manager.initialize()
         if request.method == 'GET':
