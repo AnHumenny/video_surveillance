@@ -8,7 +8,7 @@ from schemas.database import DCamera, DUser, DFindCamera
 import os
 import re
 from logs.logging_config import logger
-from config.config import new_session, bot_session
+from config.config import new_session
 
 
 class Repo:
@@ -562,7 +562,7 @@ class Repo:
     @classmethod
     async def get_allowed_chat_ids(cls) -> list[int]:
         """Select all users from DB where active is True"""
-        async with bot_session() as session:
+        async with new_session() as session:
             result = await session.execute(
                 select(DUser.tg_id).where(DUser.active == True)
             )
@@ -574,7 +574,7 @@ class Userbot:
     @classmethod
     async def auth_user_bot(cls, username, password):
         """Authenticates the user by username and password."""
-        async with bot_session() as session:
+        async with new_session() as session:
             q = select(DUser).where(and_(DUser.user == username, DUser.password == password))
             result = await session.execute(q)
             answer = result.scalars().first()
@@ -587,7 +587,7 @@ class Userbot:
     @classmethod
     async def movie_on(cls, cam_id):
         """Movie to TG ON"""
-        async with bot_session() as session:
+        async with new_session() as session:
             try:
                 query = (
                     update(DCamera)
@@ -605,7 +605,7 @@ class Userbot:
     @classmethod
     async def movie_off(cls, cam_id):
         """Movie to TG OFF"""
-        async with bot_session() as session:
+        async with new_session() as session:
             try:
                 query = (
                     update(DCamera)
@@ -623,7 +623,7 @@ class Userbot:
     @classmethod
     async def screen_on(cls, cam_id: str) -> dict:
         """Screen to TG ON"""
-        async with bot_session() as session:
+        async with new_session() as session:
             try:
                 query = (
                     update(DCamera)
@@ -641,7 +641,7 @@ class Userbot:
     @classmethod
     async def screen_off(cls, cam_id: str):
         """Screen to TG OFF"""
-        async with bot_session() as session:
+        async with new_session() as session:
             try:
                 query = (
                     update(DCamera)
@@ -658,7 +658,7 @@ class Userbot:
     @classmethod
     async def exit_user_bot(cls, tg_id):
         """Exit from bot."""
-        async with bot_session() as session:
+        async with new_session() as session:
             q = select(DUser).where(and_(DUser.tg_id == tg_id))
             result = await session.execute(q)
             answer = result.scalars().first()
