@@ -302,35 +302,6 @@ class CameraManager:
 
         return full_path
 
-    async def cleanup(self) -> None:
-        """Stop all camera readers and release resources."""
-        logger.info("[INFO] Cleaning up camera manager...")
-
-        for cam_entry in self.cameras.values():
-            if "stop_event" in cam_entry:
-                cam_entry["stop_event"].set()
-
-        camera_tasks = [cam_entry["task"] for cam_entry in self.cameras.values() if "task" in cam_entry]
-        if camera_tasks:
-            await asyncio.gather(*camera_tasks, return_exceptions=True)
-
-        for cam_entry in self.cameras.values():
-            cap = cam_entry.get("cap")
-            if cap:
-                await asyncio.get_running_loop().run_in_executor(self.executor, cap.release)
-
-        self.cameras.clear()
-        logger.info("[INFO] All cameras stopped and cleaned up")
-
-        if hasattr(self, 'executor') and self.executor is not None:
-            logger.debug("[DEBUG] Shutting down executor")
-            self.executor.shutdown(wait=True)
-            logger.info("[INFO] Executor shutdown completed")
-
-        self.cameras.clear()
-        logger.info("[INFO] CameraManager cleanup done")
-        return
-
 
     async def _start_camera_reader(self, cam_id: str, url: str, timeout: int) -> None:
         """Start the background reader task for a single camera."""
