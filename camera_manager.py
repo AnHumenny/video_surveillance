@@ -4,7 +4,7 @@ import os
 from collections import defaultdict
 from datetime import datetime
 import time
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
@@ -124,7 +124,8 @@ class CameraManager:
             enable_motion: bool,
             save_screenshot: bool = False,
             points: Optional[list[tuple[int, int]]] = None,
-            reset_counter: bool = False
+            reset_counter: bool = False,
+
     ) -> Tuple[Optional[np.ndarray], Optional[str], Optional[str]]:
         """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
 
@@ -135,7 +136,7 @@ class CameraManager:
             points: (list of tuple)
             reset_counter: bool
         """
-        cam_entry = self.cameras.get(cam_id)
+        cam_entry: Optional[Dict[str, Any]] = self.cameras.get(cam_id)
         if not cam_entry:
             logger.error(f"[ERROR] Camera {cam_id} not running")
             return None, None, None
@@ -151,9 +152,6 @@ class CameraManager:
         except asyncio.TimeoutError:
             logger.warning(f"[WARN] Timeout waiting for frame from camera {cam_id}")
             return None, None, None
-
-        if not enable_motion:
-            return frame, None, None
 
         loop = asyncio.get_running_loop()
         subtractor = self.background_subtractors[cam_id]
@@ -274,6 +272,7 @@ class CameraManager:
             logger.error(f"[ERROR] Camera {cam_id} not found")
             return None
 
+        cam_data: Optional[Dict[str, Any]] = self.cameras.get(cam_id)
         queue: asyncio.Queue = cam_data["queue"]
 
         try:
@@ -410,11 +409,11 @@ class CameraManager:
         loop = asyncio.get_running_loop()
         def open_cap():
             logger.info(f"[INFO] Opening camera {cam_id}: {url}")
-            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
-            if not cap.isOpened():
-                cap.release()
+            capture = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+            if not capture.isOpened():
+                capture.release()
                 return None
-            return cap
+            return capture
         cap = await loop.run_in_executor(self.executor, open_cap)
         if cap is None:
             logger.error(f"[ERROR] cv2.VideoCapture failed for {cam_id}")
@@ -426,6 +425,7 @@ class CameraManager:
         if cam_data:
             cap = cam_data.get("cap")
             if cap:
+                cap: Optional[cv2.VideoCapture] = cam_data.get("cap")
                 ret, frame = cap.read()
                 return frame if ret else None
         return None
@@ -435,6 +435,7 @@ class CameraManager:
         if self.recording_flags.get(cam_id):
             logger.info(f"[INFO] Recording is already underway for {cam_id}")
             return
+
         self.recording_flags[cam_id] = True
         logger.info(f"[INFO] Start continuous recording for {cam_id}")
 
@@ -442,11 +443,22 @@ class CameraManager:
             """Continuous loop of 30s video recordings while flag is True."""
             while self.recording_flags.get(cam_id, False):
                 full_path = self.generate_video_path(cam_id)
+
+                cam_entry = self.cameras.get(cam_id)
+                if cam_entry and 'current_frame' in cam_entry:
+                    frame = cam_entry['current_frame']
+                    if frame is not None:
+                        cv2.putText(frame, "REC", (10, 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+
                 try:
                     await self.record_video(cam_id, full_path, duration_sec=30)
+                except asyncio.CancelledError:
+                    logger.info(f"[INFO] Recording cancelled for {cam_id}")
+                    break
                 except Exception as e:
                     logger.error(f"[ERROR] Failed to record video for {cam_id}: {e}")
-                await asyncio.sleep(1)
+                    await asyncio.sleep(5)
 
             logger.info(f"[INFO] Recording loop exited for {cam_id}")
 
@@ -456,17 +468,29 @@ class CameraManager:
 
     async def stop_continuous_recording(self, cam_id: str):
         """Stops the current continuous recording of the camera."""
-        if self.recording_flags.get(cam_id):
-            self.recording_flags[cam_id] = False
-            logger.info(f"[INFO] Recording stopped for {cam_id}")
-            task = self.recording_tasks.pop(cam_id, None)
-            if task:
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        else:
+        if not self.recording_flags.get(cam_id):
             logger.info(f"[INFO] The recording was not made for {cam_id}")
+            return
+
+        self.recording_flags[cam_id] = False
+        logger.info(f"[INFO] Recording stopped for {cam_id}")
+
+        task = self.recording_tasks.pop(cam_id, None)
+        if task is None:
+            logger.warning(f"[WARN] No recording task found for {cam_id}")
+            return
+
+        if not asyncio.isfuture(task) and not asyncio.iscoroutine(task):
+            logger.warning(f"[WARN] Invalid task type for {cam_id}: {type(task)}")
+            return
+
+        try:
+            await task
+            logger.debug(f"[DEBUG] Recording task for {cam_id} completed successfully")
+        except asyncio.CancelledError:
+            logger.debug(f"[DEBUG] Recording task for {cam_id} was cancelled")
+        except Exception as e:
+            logger.error(f"[ERROR] Error while stopping recording for {cam_id}: {e}")
 
 
     async def reinitialize_camera(self, cam_id: str) -> bool:
