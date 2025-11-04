@@ -17,10 +17,12 @@ from functools import wraps
 import jwt
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
+
 import tasks
 from schemas.repository import Repo
 from camera_manager import CameraManager
 from logs.logging_config import logger
+
 
 load_dotenv()
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -70,28 +72,6 @@ async def generate_frames(cap, cam_id):
         except Exception as e:
             logger.error(f"Frame encoding error for camera {cam_id}: {e}")
             break
-
-
-def generate_token(username, status):
-    """generation token"""
-    payload = {
-        'user': username,
-        'status': status,
-        'exp': datetime.now(datetime.UTC) + timedelta(hours=int(os.getenv("TOKEN_TIME_AUTHORIZATION")))
-    }
-    return jwt.encode(payload, os.getenv("SECRET_KEY"), algorithm='HS256')
-
-
-def verify_token(token):
-    """verification token"""
-    if not token:
-        return False, None
-    try:
-        payload = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=['HS256'])
-        status = payload.get('status')
-        return True, status
-    except (jwt.InvalidTokenError, jwt.ExpiredSignatureError):
-        return False, None
 
 
 def hash_password(password: str) -> str:
@@ -706,8 +686,11 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, loop.stop)
+    try:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, loop.stop)
+    except (NotImplementedError, RuntimeError) as e:
+        logger.warning(f"[WARNING] Could not set signal handler: {e}")
 
     try:
         loop.run_until_complete(
@@ -716,6 +699,21 @@ if __name__ == "__main__":
                 port=int(os.getenv("PORT", 8080))
             )
         )
+    except KeyboardInterrupt:
+        logger.info("[INFO] Received interrupt signal")
+    except Exception as e:
+        logger.error(f"[ERROR] Application error: {e}")
     finally:
-        loop.close()
-        logger.info("[INFO] Event loop closed")
+        try:
+            pending = asyncio.all_tasks(loop)
+            if pending:
+                logger.info("[INFO] Cancelling pending tasks")
+                for task in pending:
+                    task.cancel()
+
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+        finally:
+            loop.close()
+            logger.info("[INFO] Event loop closed")
