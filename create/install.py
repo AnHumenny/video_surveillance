@@ -4,7 +4,7 @@ import hashlib
 import time
 from dotenv import load_dotenv
 from sqlalchemy.future import select
-from schemas.database import Model, DUser, DFindCamera
+from surveillance.schemas.database import Model, DUser, DFindCamera
 from logs.logging_config import logger
 from config.config import engine, new_session
 

@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple, Any
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-from schemas.repository import Repo
+from surveillance.schemas.repository import Repo
 from logs.logging_config import logger
 
 

@@ -1,5 +1,5 @@
-import io
 import os
+import io
 import subprocess
 
 from hypercorn.config import Config
@@ -18,9 +18,9 @@ import jwt
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
-import tasks
-from schemas.repository import Repo
-from camera_manager import CameraManager
+from celery_task import tasks
+from surveillance.schemas.repository import Repo
+from surveillance.camera_manager import CameraManager
 from logs.logging_config import logger
 
 
