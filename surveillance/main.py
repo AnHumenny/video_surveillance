@@ -661,7 +661,7 @@ async def shutdown_trigger():
 async def cleanup():
     """Shutdown"""
     logger.info("[INFO] Shutdown...")
-    stop_sh_path = os.path.join(script_dir, "stop.sh")
+    stop_sh_path = os.path.join(script_dir, "../stop.sh")
     subprocess.run([stop_sh_path])
 
 
