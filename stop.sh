@@ -1,9 +1,10 @@
 #!/bin/bash
 set +e
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || { echo "Error: Cannot enter script directory" >&2; exit 1; }
 
-export PYTHONPATH="$(pwd):$PYTHONPATH"
+PYTHONPATH="$(pwd):$PYTHONPATH"
+export PYTHONPATH
 
 echo "[INFO] Shutting down Celery workers..."
 echo "[INFO] Purging Celery tasks..."
@@ -13,6 +14,7 @@ sleep 2
 echo "[INFO] Shutting down Celery workers..."
 celery -A celery_task control shutdown || echo "[WARNING] Celery shutdown failed, workers may already be stopped."
 sleep 5
+
 if pgrep -f "celery -A celery_task worker" > /dev/null 2>&1; then
     echo "[INFO] Celery processes still running, sending SIGTERM..."
     pkill -f "celery -A celery_task worker" || true
@@ -22,12 +24,13 @@ if pgrep -f "celery -A celery_task worker" > /dev/null 2>&1; then
         pkill -9 -f "celery -A celery_task worker" || true
     fi
 fi
+
 echo "[INFO] Checking Celery status..."
 celery -A celery_task inspect active || echo "[INFO] No active Celery workers."
 
 echo "[INFO] Stopping surveillance/main.py..."
 pkill -f "python3 -m surveillance.main" || true
-if pgrep -f "python3 -m surveillance.main" > /dev/null; then
+if pgrep -f "python3 -m surveillance.main" > /dev/null 2>&1; then
     echo "[INFO] surveillance/main.py still running, forcing SIGKILL..."
     pkill -9 -f "python3 -m surveillance.main" || true
 fi
@@ -42,7 +45,7 @@ fi
 
 echo "[INFO] Stopping bot.app..."
 pkill -f "python3 -m bot.app" || true
-if pgrep -f "python3 -m bot.app" > /dev/null; then
+if pgrep -f "python3 -m bot.app" > /dev/null 2>&1; then
     echo "[INFO] bot.app still running, forcing SIGKILL..."
     pkill -9 -f "python3 -m bot.app" || true
 fi

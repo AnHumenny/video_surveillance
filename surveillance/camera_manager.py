@@ -282,7 +282,7 @@ class CameraManager:
             return None
 
         height, width = frame.shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter.fourcc(*'mp4v')
         out = cv2.VideoWriter(full_path, fourcc, self.fps, (width, height))
 
         loop = asyncio.get_running_loop()
