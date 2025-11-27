@@ -1,5 +1,5 @@
-import io
 import os
+import io
 import subprocess
 
 from hypercorn.config import Config
@@ -18,9 +18,9 @@ import jwt
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
-import tasks
-from schemas.repository import Repo
-from camera_manager import CameraManager
+from celery_task import tasks
+from surveillance.schemas.repository import Repo
+from surveillance.camera_manager import CameraManager
 from logs.logging_config import logger
 
 
@@ -69,8 +69,8 @@ async def generate_frames(cap, cam_id):
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
             await asyncio.sleep(0.03)
 
-        except Exception as e:
-            logger.error(f"Frame encoding error for camera {cam_id}: {e}")
+        except Exception as err:
+            logger.error(f"Frame encoding error for camera {cam_id}: {err}")
             break
 
 
@@ -188,8 +188,8 @@ async def video_feed(cam_id):
                        b'Content-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
                 await asyncio.sleep(0.033)
 
-        except Exception as e:
-            logger.error(f"[ERROR] Streaming error for camera {cam_id}: {e}")
+        except Exception as error:
+            logger.error(f"[ERROR] Streaming error for camera {cam_id}: {error}")
 
     return Response(stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
@@ -243,8 +243,8 @@ async def scan_network_for_rtsp():
     try:
         nm = nmap.PortScanner()
         nm.scan(hosts=network_range, arguments='-p 554,8554 --open')
-    except Exception as e:
-        return jsonify({'error': f'Nmap scan failed: {str(e)}'}), 500
+    except Exception as errors:
+        return jsonify({'error': f'Nmap scan failed: {str(errors)}'}), 500
     rtsp_devices = []
     for host in nm.all_hosts():
         for port in [554, 8554]:
@@ -417,8 +417,8 @@ async def index():
                 return response
         except jwt.ExpiredSignatureError:
             logger.info("Token expired")
-        except jwt.InvalidTokenError as e:
-            logger.error(f"Invalid token: {str(e)}")
+        except jwt.InvalidTokenError as f:
+            logger.error(f"Invalid token: {str(f)}")
     return redirect(url_for('login'))
 
 
@@ -484,15 +484,15 @@ async def reload_cameras():
             mimetype='application/json',
             status=200
         )
-    except ValueError as e:
+    except ValueError as v:
         return Response(
-            json.dumps({"error": str(e)}),
+            json.dumps({"error": str(v)}),
             mimetype='application/json',
             status=500
         )
-    except Exception as e:
+    except Exception as w:
         return Response(
-            json.dumps({"error": f"Error during reboot CameraManager: {str(e)}"}),
+            json.dumps({"error": f"Error during reboot CameraManager: {str(w)}"}),
             mimetype='application/json',
             status=500
         )
@@ -506,8 +506,8 @@ async def reinitialize_camera(cam_id):
             return jsonify({"success": True})
         else:
             return jsonify({"success": False, "error": f"Failed to reinitialize camera {cam_id}"}), 500
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception as er:
+        return jsonify({"success": False, "error": str(er)}), 500
 
 
 @app.route('/screenshot/<cam_id>', methods=['POST'])
@@ -630,8 +630,8 @@ async def health_server():
     else:
         data = await request.form
     subject = data.get("subject", "I`m server.")
-    task = tasks.health_server.delay(subject)
-    return jsonify({"task_id": task.id}, "success")
+    health = tasks.health_server.delay(subject)
+    return jsonify({"task_id": health.id}, "success")
 
 
 @token_required_camera
@@ -661,7 +661,7 @@ async def shutdown_trigger():
 async def cleanup():
     """Shutdown"""
     logger.info("[INFO] Shutdown...")
-    stop_sh_path = os.path.join(script_dir, "stop.sh")
+    stop_sh_path = os.path.join(script_dir, "../stop.sh")
     subprocess.run([stop_sh_path])
 
 
@@ -688,7 +688,7 @@ if __name__ == "__main__":
 
     try:
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, loop.stop)
+            loop.add_signal_handler(sig, loop.stop)  # noqa:ARG
     except (NotImplementedError, RuntimeError) as e:
         logger.warning(f"[WARNING] Could not set signal handler: {e}")
 

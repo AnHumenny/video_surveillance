@@ -4,7 +4,7 @@ import smtplib
 import time
 from email.mime.text import MIMEText
 from datetime import datetime
-from celery_app import celery
+from celery_task.celery_app import celery
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders

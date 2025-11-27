@@ -14,10 +14,10 @@ from aiogram.filters import Command, StateFilter
 from aiogram.types import InlineKeyboardMarkup, WebAppInfo, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from main import force_start_cam
+from surveillance.main import force_start_cam
 
 from bot import lists
-from schemas.repository import  Userbot, Repo
+from surveillance.schemas.repository import  Userbot, Repo
 from dotenv import load_dotenv
 
 API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')

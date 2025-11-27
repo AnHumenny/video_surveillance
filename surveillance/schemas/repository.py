@@ -4,7 +4,7 @@ import json
 from typing import Any
 from sqlalchemy import select, insert, delete, and_, update, Select
 from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
-from schemas.database import DCamera, DUser, DFindCamera
+from surveillance.schemas.database import DCamera, DUser, DFindCamera
 import os
 import re
 from logs.logging_config import logger
@@ -472,7 +472,7 @@ class Repo:
     @staticmethod
     def select_all_cameras_to_json():
         """Синхронная выборка всех камер из таблицы _camera в формате JSON-словаря."""
-        path_to_database = os.path.join(".", f"{os.getenv('DATABASE')}.db")
+        path_to_database = os.path.join("", f"{os.getenv('DATABASE')}.db")
         try:
             conn = sqlite3.connect(path_to_database)
             cursor = conn.cursor()
@@ -489,7 +489,7 @@ class Repo:
     @staticmethod
     def reinit_camera(cam_id):
         """Синхронная выборка одной активной камеры по id, возвращает JSON."""
-        path_to_database = os.path.join(".", f"{os.getenv('DATABASE')}.db")
+        path_to_database = os.path.join("", f"{os.getenv('DATABASE')}.db")
         try:
             with sqlite3.connect(path_to_database) as conn:
                 cursor = conn.cursor()

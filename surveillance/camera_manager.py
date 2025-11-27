@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple, Any
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-from schemas.repository import Repo
+from surveillance.schemas.repository import Repo
 from logs.logging_config import logger
 
 
@@ -282,7 +282,7 @@ class CameraManager:
             return None
 
         height, width = frame.shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter.fourcc(*'mp4v')
         out = cv2.VideoWriter(full_path, fourcc, self.fps, (width, height))
 
         loop = asyncio.get_running_loop()
