@@ -53,7 +53,6 @@ class CameraManager:
             cam_id: cv2.createBackgroundSubtractorMOG2() for cam_id in self.camera_configs
         }
 
-
     async def initialize(self, timeout_per_camera: int = 5) -> None:
         """Start background reader for every camera found in DB.
 
@@ -121,18 +120,17 @@ class CameraManager:
     async def get_frame_with_motion_detection(
             self,
             cam_id: str,
-            enable_motion: bool,
             save_screenshot: bool = False,
+            record_video: bool = False,
             points: Optional[list[tuple[int, int]]] = None,
             reset_counter: bool = False,
-
     ) -> Tuple[Optional[np.ndarray], Optional[str], Optional[str]]:
         """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
 
         Args:
             cam_id (str): The ID of the camera.
-            enable_motion (bool): Whether to apply motion detection.
             save_screenshot (bool): Whether to save a screenshot on central motion detection.
+            record_video (bool): Whether to record video on motion detection.
             points: (list of tuple)
             reset_counter: bool
         """
@@ -172,14 +170,20 @@ class CameraManager:
             now = time.time()
             last_time = self.last_screenshot_times.get(cam_id, 0)
 
-            zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
-            zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
+            if points:
+                zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
+                zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
+            else:
+                zone_x1 = zone_y1 = 0
+                zone_x2 = processed.shape[1]
+                zone_y2 = processed.shape[0]
 
             min_area = 1500
             max_dist = 70
             self.tracked_objects.setdefault(cam_id, {})
             object_data = self.tracked_objects[cam_id]
             should_record = False
+            object_detected_in_zone = False
 
             for cnt in contours:
                 if cv2.contourArea(cnt) < min_area:
@@ -189,6 +193,11 @@ class CameraManager:
                 cx, cy = x + w // 2, y + h // 2
                 obj_in_zone = zone_x1 <= cx <= zone_x2 and zone_y1 <= cy <= zone_y2
 
+                if not obj_in_zone:
+                    continue
+
+                object_detected_in_zone = True
+
                 matched_id = None
                 for obj_id, data in object_data.items():
                     prev_x, prev_y = data["position"]
@@ -197,7 +206,7 @@ class CameraManager:
                         matched_id = obj_id
                         break
 
-                if matched_id is None and obj_in_zone:
+                if matched_id is None:
                     obj_id = self.next_object_id
                     self.next_object_id += 1
                     object_data[obj_id] = {"position": (cx, cy), "last_seen": now}
@@ -213,7 +222,7 @@ class CameraManager:
                         screenshot_path = filename
                         self.last_screenshot_times[cam_id] = now
 
-                    if not self.recording_flags.get(cam_id, False):
+                    if record_video and not self.recording_flags.get(cam_id, False):
                         should_record = True
 
                 elif matched_id is not None:
@@ -228,22 +237,26 @@ class CameraManager:
                 if now - data["last_seen"] < 2
             }
 
-            cv2.rectangle(processed, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 0, 255), 2)
-            cv2.putText(processed, "Zone", (zone_x1, max(0, zone_y1 - 10)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            if points:
+                cv2.rectangle(processed, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 0, 255), 2)
+                cv2.putText(processed, "Zone", (zone_x1, max(0, zone_y1 - 10)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
             if self.recording_flags.get(cam_id):
                 cv2.putText(processed, "REC", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
 
             cv2.putText(processed, f"Detected objects: {self.count_object}, started at: {self.start_time}",
-                        (points[0][0], 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+            if not object_detected_in_zone:
+                should_record = False
 
             return processed, screenshot_path, should_record
 
         processed, screenshot_path, should_record = await loop.run_in_executor(self.executor, detect, frame)
 
-        if should_record:
+        if should_record and record_video:
             self.recording_flags[cam_id] = True
             video_path = self.generate_video_path(cam_id)
 

@@ -135,11 +135,13 @@ async def video_feed(cam_id):
 
     async def stream():
         config = await Repo.select_cam_config(cam_id)
-        enable_motion = config["status_cam"]
-        save_screenshot = config["screen"]
-        send_email = config["send_email"]
-        send_tg = config["send_tg"]
-        send_tg_video = ["send_tg_video"]
+
+        enable_motion = config.get("status_cam", False)
+        save_screenshot = config.get("screen_cam", False)
+        send_email = config.get("send_email", False)
+        send_tg = config.get("send_tg", False)
+        send_tg_video = config.get("send_video_tg", False)
+
         empty_in_row = 0
         max_empty = 10
 
@@ -149,8 +151,16 @@ async def video_feed(cam_id):
             while True:
                 if enable_motion:
                     frame, screenshot_path, video_path = await camera_manager.get_frame_with_motion_detection(
-                        cam_id, enable_motion=True, save_screenshot=save_screenshot, points=points
+                        cam_id=cam_id,
+                        save_screenshot=save_screenshot,
+                        record_video=send_tg_video,
+                        points=points
                     )
+
+                    logger.info(f"[MAIN] After detection: "
+                                f"screenshot={'YES' if screenshot_path else 'NO'}, "
+                                f"video={'YES' if video_path else 'NO'}")
+
                 else:
                     frame = await camera_manager.get_frame_without_motion_detection(cam_id)
                     screenshot_path = None
@@ -168,12 +178,15 @@ async def video_feed(cam_id):
 
                 if send_email and screenshot_path:
                     tasks.send_screenshot_email.delay(cam_id, screenshot_path)
+                    logger.info(f"[MAIN] Email task sent for screenshot")
 
                 if send_tg and screenshot_path:
+                    logger.info(f"[MAIN] Sending Telegram screenshot to {len(allowed_ids)} chats")
                     for chat_id in allowed_ids:
                         tasks.send_telegram_notification.delay(cam_id, screenshot_path, chat_id)
 
                 if send_tg_video and video_path:
+                    logger.info(f"[MAIN] Sending Telegram video to {len(allowed_ids)} chats")
                     for chat_id in allowed_ids:
                         tasks.send_telegram_video.delay(cam_id, video_path, chat_id)
 
@@ -223,7 +236,6 @@ async def clear_count():
     points = await Repo.select_coordinates_by_id(cam_id)
     await camera_manager.get_frame_with_motion_detection(
         cam_id,
-        enable_motion=True,
         points=points,
         reset_counter=True
     )
