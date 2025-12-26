@@ -118,7 +118,6 @@ class CameraManager:
             logger.warning(f"[WARN] Timeout waiting for frame from camera {cam_id}")
             return None
 
-
     async def get_frame_with_motion_detection(
             self,
             cam_id: str,
@@ -127,15 +126,8 @@ class CameraManager:
             points: Optional[list[tuple[int, int]]] = None,
             reset_counter: bool = False,
     ) -> Tuple[Optional[np.ndarray], Optional[str], Optional[str]]:
-        """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
+        """Return the latest frame for a given camera, optionally with motion detection and screenshot saving."""
 
-        Args:
-            cam_id (str): The ID of the camera.
-            save_screenshot (bool): Whether to save a screenshot on central motion detection.
-            send_video_tg (bool): Whether to record video for Telegram.
-            points: (list of tuple)
-            reset_counter: bool
-        """
         cam_entry: Optional[Dict[str, Any]] = self.cameras.get(cam_id)
         if not cam_entry:
             logger.error(f"[ERROR] Camera {cam_id} not running")
@@ -144,11 +136,12 @@ class CameraManager:
         if reset_counter:
             self.start_time = datetime.now().replace(microsecond=0)
             self.count_object = 0
-            logger.info(f"[INFO] Счётчик объектов для камеры {cam_id} сброшен, дата начала изменена")
 
         queue: asyncio.Queue = cam_entry['queue']
         try:
             frame = await asyncio.wait_for(queue.get(), timeout=2.0)
+            if frame is None:
+                return None, None, None
         except asyncio.TimeoutError:
             logger.warning(f"[WARN] Timeout waiting for frame from camera {cam_id}")
             return None, None, None
@@ -172,6 +165,9 @@ class CameraManager:
             now = time.time()
             last_time = self.last_screenshot_times.get(cam_id, 0)
 
+            if not points:
+                return processed, None, False
+
             zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
             zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
 
@@ -180,10 +176,12 @@ class CameraManager:
             self.tracked_objects.setdefault(cam_id, {})
             object_data = self.tracked_objects[cam_id]
 
-            should_record = False if not send_video_tg else False   # флаг записи, допилить, видео перестало работать, при включении не работает детекция движения. Скрины заработали корректно
+            should_record = False
 
             for cnt in contours:
-                if cv2.contourArea(cnt) < min_area:
+                area = cv2.contourArea(cnt)
+
+                if area < min_area:
                     continue
 
                 x, y, w, h = cv2.boundingRect(cnt)
@@ -238,7 +236,8 @@ class CameraManager:
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
 
             cv2.putText(processed, f"Detected objects: {self.count_object}, started at: {self.start_time}",
-                        (points[0][0], 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        (points[0][0], 30), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7, (0, 0, 255), 2)
 
             return processed, screenshot_path, should_record
 
@@ -249,8 +248,12 @@ class CameraManager:
             video_path = self.generate_video_path(cam_id)
 
             async def record_and_reset():
-                await self.record_video(cam_id, video_path, duration_sec=int(os.getenv("BOT_SEND_VIDEO")))
-                self.recording_flags[cam_id] = False
+                try:
+                    await self.record_video(cam_id, video_path, duration_sec=int(os.getenv("BOT_SEND_VIDEO", 5)))
+                except Exception as e:
+                    logger.error(f"[ERROR] Failed to record video for {cam_id}: {e}", exc_info=True)
+                finally:
+                    self.recording_flags[cam_id] = False
 
             asyncio.create_task(record_and_reset())
         else:

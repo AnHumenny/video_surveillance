@@ -284,23 +284,46 @@ class Repo:
 
     @classmethod
     async def select_cam_config(cls, ssid):
+        """Select status_cam and screen from DCamera.
+
+        Returns: dict.
         """
-        Select status_cam and screen from DCamera.
-        Returns: dict with 'status_cam' and 'screen'.
-        """
+
         async with new_session() as session:
             try:
                 q = Select(
-                    DCamera.status_cam, DCamera.screen_cam, DCamera.send_email, DCamera.send_tg,
-                    DCamera.send_video_tg, ).where(DCamera.id == ssid, DCamera.visible_cam == True)
+                    DCamera.status_cam,
+                    DCamera.screen_cam,
+                    DCamera.send_email,
+                    DCamera.send_tg,
+                    DCamera.send_video_tg
+                ).where(DCamera.id == ssid, DCamera.visible_cam == True)
                 result = await session.execute(q)
                 row = result.first()
                 if row:
-                    return {"status_cam": row[0], "screen": row[1], "send_email": row[2], "send_tg": row[3]}
-                return {"status_cam": False, "screen": False}
+                    return {
+                        "status_cam": row[0],
+                        "screen_cam": row[1],
+                        "send_email": row[2],
+                        "send_tg": row[3],
+                        "send_video_tg": row[4]
+                    }
+                return {
+                    "status_cam": False,
+                    "screen_cam": False,
+                    "send_email": False,
+                    "send_tg": False,
+                    "send_video_tg": False
+                }
             except IntegrityError as e:
                 logger.error(f"[ERROR] [DB ERROR] {e}")
-                return {"status_cam": False, "screen": False}
+                return {
+                    "status_cam": False,
+                    "screen_cam": False,
+                    "send_email": False,
+                    "send_tg": False,
+                    "send_video_tg": False
+                }
 
     @classmethod
     async def select_all_users(cls):

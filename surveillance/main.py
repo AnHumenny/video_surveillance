@@ -136,10 +136,10 @@ async def video_feed(cam_id):
     async def stream():
         config = await Repo.select_cam_config(cam_id)
 
-        save_screenshot = config.get("screen", False)
+        save_screenshot = config.get("screen_cam", False)
         send_email = config.get("send_email", False)
         send_tg = config.get("send_tg", False)
-        send_video_tg = config.get("send_video_tg", False)  # Используем .get()
+        send_video_tg = config.get("send_video_tg", False)
 
         empty_in_row = 0
         max_empty = 10
