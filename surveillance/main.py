@@ -136,6 +136,7 @@ async def video_feed(cam_id):
     async def stream():
         config = await Repo.select_cam_config(cam_id)
 
+        show_zone = config.get("status_cam", True)
         save_screenshot = config.get("screen_cam", False)
         send_email = config.get("send_email", False)
         send_tg = config.get("send_tg", False)
@@ -148,25 +149,13 @@ async def video_feed(cam_id):
 
         try:
             while True:
-
-                if send_video_tg:
-                    frame, screenshot_path, video_path = await camera_manager.get_frame_with_motion_detection(
-                        cam_id=cam_id,
-                        save_screenshot=False,
-                        send_video_tg=True,
-                        points=points
-                    )
-                elif save_screenshot:
-                    frame, screenshot_path, video_path = await camera_manager.get_frame_with_motion_detection(
-                        cam_id=cam_id,
-                        save_screenshot=True,
-                        send_video_tg=False,
-                        points=points
-                    )
-                else:
-                    frame = await camera_manager.get_frame_without_motion_detection(cam_id)
-                    screenshot_path = None
-                    video_path = None
+                frame, screenshot_path, video_path = await camera_manager.get_frame_with_motion_detection(
+                    cam_id=cam_id,
+                    save_screenshot=save_screenshot,
+                    send_video_tg=send_video_tg,
+                    points=points,
+                    show_zone=show_zone
+                )
 
                 if frame is None:
                     empty_in_row += 1
@@ -193,7 +182,6 @@ async def video_feed(cam_id):
                 frame = cv2.resize(frame, (width, height))
                 ret, buf = cv2.imencode('.jpg', frame)
                 if not ret:
-                    logger.error(f"[ERROR] JPEG encoding failed for camera {cam_id}")
                     continue
 
                 yield (b'--frame\r\n'
