@@ -121,21 +121,14 @@ class CameraManager:
     async def get_frame_with_motion_detection(
             self,
             cam_id: str,
-            enable_motion: bool,
             save_screenshot: bool = False,
+            send_video_tg: bool = False,
             points: Optional[list[tuple[int, int]]] = None,
             reset_counter: bool = False,
-
+            show_zone: bool = True,
     ) -> Tuple[Optional[np.ndarray], Optional[str], Optional[str]]:
-        """Return the latest frame for a given camera, optionally with motion detection and screenshot saving.
+        """Return the latest frame for a given camera, optionally with motion detection and screenshot saving."""
 
-        Args:
-            cam_id (str): The ID of the camera.
-            enable_motion (bool): Whether to apply motion detection.
-            save_screenshot (bool): Whether to save a screenshot on central motion detection.
-            points: (list of tuple)
-            reset_counter: bool
-        """
         cam_entry: Optional[Dict[str, Any]] = self.cameras.get(cam_id)
         if not cam_entry:
             logger.error(f"[ERROR] Camera {cam_id} not running")
@@ -144,13 +137,13 @@ class CameraManager:
         if reset_counter:
             self.start_time = datetime.now().replace(microsecond=0)
             self.count_object = 0
-            logger.info(f"[INFO] Счётчик объектов для камеры {cam_id} сброшен, дата начала изменена")
 
         queue: asyncio.Queue = cam_entry['queue']
         try:
-            frame = await asyncio.wait_for(queue.get(), timeout=2.0)
+            frame = await asyncio.wait_for(queue.get(), timeout=0.5)
+            if frame is None:
+                return None, None, None
         except asyncio.TimeoutError:
-            logger.warning(f"[WARN] Timeout waiting for frame from camera {cam_id}")
             return None, None, None
 
         loop = asyncio.get_running_loop()
@@ -162,100 +155,140 @@ class CameraManager:
             """Motion detection with object tracking, screenshot saving, and record trigger."""
             nonlocal screenshot_path
 
-            fg_mask = subtractor.apply(frm)
-            kernel = np.ones((5, 5), np.uint8)
-            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
-            fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
-            contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
             processed = frm.copy()
             now = time.time()
             last_time = self.last_screenshot_times.get(cam_id, 0)
-
-            zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
-            zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
-
-            min_area = 1500
-            max_dist = 70
-            self.tracked_objects.setdefault(cam_id, {})
-            object_data = self.tracked_objects[cam_id]
             should_record = False
 
-            for cnt in contours:
-                if cv2.contourArea(cnt) < min_area:
-                    continue
+            if save_screenshot or send_video_tg or show_zone:
+                try:
+                    fg_mask = subtractor.apply(frm)
+                    kernel = np.ones((5, 5), np.uint8)
+                    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
+                    fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
+                    contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-                x, y, w, h = cv2.boundingRect(cnt)
-                cx, cy = x + w // 2, y + h // 2
-                obj_in_zone = zone_x1 <= cx <= zone_x2 and zone_y1 <= cy <= zone_y2
+                    min_area = 1500
+                    max_dist = 70
+                    self.tracked_objects.setdefault(cam_id, {})
+                    object_data = self.tracked_objects[cam_id]
 
-                matched_id = None
-                for obj_id, data in object_data.items():
-                    prev_x, prev_y = data["position"]
-                    dist = ((prev_x - cx) ** 2 + (prev_y - cy) ** 2) ** 0.5
-                    if dist < max_dist and (now - data["last_seen"] < 2):
-                        matched_id = obj_id
-                        break
+                    has_points = points and len(points) >= 2
+                    zone_x1, zone_x2, zone_y1, zone_y2 = 0, 0, 0, 0
+                    if has_points:
+                        zone_x1, zone_x2 = min(p[0] for p in points), max(p[0] for p in points)
+                        zone_y1, zone_y2 = min(p[1] for p in points), max(p[1] for p in points)
 
-                if matched_id is None and obj_in_zone:
-                    obj_id = self.next_object_id
-                    self.next_object_id += 1
-                    object_data[obj_id] = {"position": (cx, cy), "last_seen": now}
-                    self.count_object += 1
-                    logger.info(f"[INFO] Object with ID={obj_id} in zone. All: {self.count_object}")
+                    for cnt in contours:
+                        area = cv2.contourArea(cnt)
+                        if area < min_area:
+                            continue
 
-                    if save_screenshot and (now - last_time) > 2:
-                        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
-                        save_dir = f"media/screenshots/camera_{cam_id}/{timestamp[:10]}/"
-                        os.makedirs(save_dir, exist_ok=True)
-                        filename = os.path.join(save_dir, f"motion_{timestamp}.jpg")
-                        cv2.imwrite(filename, frm)
-                        screenshot_path = filename
-                        self.last_screenshot_times[cam_id] = now
+                        x, y, w, h = cv2.boundingRect(cnt)
+                        cx, cy = x + w // 2, y + h // 2
 
-                    if not self.recording_flags.get(cam_id, False):
-                        should_record = True
+                        obj_in_zone = True
+                        if has_points:
+                            obj_in_zone = zone_x1 <= cx <= zone_x2 and zone_y1 <= cy <= zone_y2
 
-                elif matched_id is not None:
-                    object_data[matched_id]["position"] = (cx, cy)
-                    object_data[matched_id]["last_seen"] = now
+                        matched_id = None
+                        for obj_id, data in object_data.items():
+                            prev_x, prev_y = data["position"]
+                            dist = ((prev_x - cx) ** 2 + (prev_y - cy) ** 2) ** 0.5
+                            if dist < max_dist and (now - data["last_seen"] < 2):
+                                matched_id = obj_id
+                                break
 
-                cv2.rectangle(processed, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        if matched_id is None and obj_in_zone:
+                            obj_id = self.next_object_id
+                            self.next_object_id += 1
+                            object_data[obj_id] = {"position": (cx, cy), "last_seen": now}
+                            self.count_object += 1
 
-            self.tracked_objects[cam_id] = {
-                obj_id: data
-                for obj_id, data in object_data.items()
-                if now - data["last_seen"] < 2
-            }
+                            if save_screenshot and (now - last_time) > 2:
+                                try:
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    save_dir = f"media/screenshots/camera_{cam_id}/{timestamp[:8]}/"
+                                    os.makedirs(save_dir, exist_ok=True)
+                                    filename = os.path.join(save_dir, f"motion_{timestamp}.jpg")
 
-            cv2.rectangle(processed, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 0, 255), 2)
-            cv2.putText(processed, "Zone", (zone_x1, max(0, zone_y1 - 10)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                                    cv2.imwrite(filename, frm)
+                                    if os.path.exists(filename):
+                                        screenshot_path = filename
+                                        self.last_screenshot_times[cam_id] = now
+                                except Exception:
+                                    pass
+
+                            if send_video_tg and not self.recording_flags.get(cam_id, False):
+                                should_record = True
+
+                        elif matched_id is not None:
+                            object_data[matched_id]["position"] = (cx, cy)
+                            object_data[matched_id]["last_seen"] = now
+
+                        if show_zone:
+                            cv2.rectangle(processed, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+                    self.tracked_objects[cam_id] = {
+                        obj_id: data
+                        for obj_id, data in object_data.items()
+                        if now - data["last_seen"] < 2
+                    }
+
+                except Exception:
+                    pass
+
+            if show_zone and points and len(points) > 0:
+                try:
+                    x_coords, y_coords = zip(*points)
+                    zone_x1, zone_x2 = min(x_coords), max(x_coords)
+                    zone_y1, zone_y2 = min(y_coords), max(y_coords)
+
+                    cv2.rectangle(processed, (zone_x1, zone_y1), (zone_x2, zone_y2), (0, 0, 255), 2)
+                    cv2.putText(processed, "Zone", (zone_x1, max(0, zone_y1 - 10)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 1)
+
+                    counter_text = f"Objects: {self.count_object}"
+                    cv2.putText(processed, counter_text,
+                                (points[0][0], 30), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.9, (0, 0, 255), 1)
+                except Exception:
+                    pass
 
             if self.recording_flags.get(cam_id):
                 cv2.putText(processed, "REC", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
-
-            cv2.putText(processed, f"Detected objects: {self.count_object}, started at: {self.start_time}",
-                        (points[0][0], 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1)
 
             return processed, screenshot_path, should_record
 
-        processed, screenshot_path, should_record = await loop.run_in_executor(self.executor, detect, frame)
+        try:
+            processed, screenshot_path, should_record = await asyncio.wait_for(
+                loop.run_in_executor(self.executor, detect, frame),
+                timeout=0.1
+            )
+        except asyncio.TimeoutError:
+            processed = frame
+            screenshot_path = None
+            should_record = False
 
-        if should_record:
+        if send_video_tg and should_record and not self.recording_flags.get(cam_id, False):
             self.recording_flags[cam_id] = True
             video_path = self.generate_video_path(cam_id)
 
             async def record_and_reset():
-                await self.record_video(cam_id, video_path, duration_sec=int(os.getenv("BOT_SEND_VIDEO")))
-                self.recording_flags[cam_id] = False
+                try:
+                    await self.record_video(cam_id, video_path, duration_sec=int(os.getenv("BOT_SEND_VIDEO", 5)))
+                except Exception:
+                    pass
+                finally:
+                    self.recording_flags[cam_id] = False
 
             asyncio.create_task(record_and_reset())
         else:
             video_path = None
 
         return processed, screenshot_path, video_path
+
 
     @staticmethod
     def generate_video_path(cam_id: str) -> str:

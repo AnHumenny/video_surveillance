@@ -135,11 +135,13 @@ async def video_feed(cam_id):
 
     async def stream():
         config = await Repo.select_cam_config(cam_id)
-        enable_motion = config["status_cam"]
-        save_screenshot = config["screen"]
-        send_email = config["send_email"]
-        send_tg = config["send_tg"]
-        send_tg_video = ["send_tg_video"]
+
+        show_zone = config.get("status_cam", True)
+        save_screenshot = config.get("screen_cam", False)
+        send_email = config.get("send_email", False)
+        send_tg = config.get("send_tg", False)
+        send_video_tg = config.get("send_video_tg", False)
+
         empty_in_row = 0
         max_empty = 10
 
@@ -147,14 +149,13 @@ async def video_feed(cam_id):
 
         try:
             while True:
-                if enable_motion:
-                    frame, screenshot_path, video_path = await camera_manager.get_frame_with_motion_detection(
-                        cam_id, enable_motion=True, save_screenshot=save_screenshot, points=points
-                    )
-                else:
-                    frame = await camera_manager.get_frame_without_motion_detection(cam_id)
-                    screenshot_path = None
-                    video_path = None
+                frame, screenshot_path, video_path = await camera_manager.get_frame_with_motion_detection(
+                    cam_id=cam_id,
+                    save_screenshot=save_screenshot,
+                    send_video_tg=send_video_tg,
+                    points=points,
+                    show_zone=show_zone
+                )
 
                 if frame is None:
                     empty_in_row += 1
@@ -173,7 +174,7 @@ async def video_feed(cam_id):
                     for chat_id in allowed_ids:
                         tasks.send_telegram_notification.delay(cam_id, screenshot_path, chat_id)
 
-                if send_tg_video and video_path:
+                if send_video_tg and video_path:
                     for chat_id in allowed_ids:
                         tasks.send_telegram_video.delay(cam_id, video_path, chat_id)
 
@@ -181,7 +182,6 @@ async def video_feed(cam_id):
                 frame = cv2.resize(frame, (width, height))
                 ret, buf = cv2.imencode('.jpg', frame)
                 if not ret:
-                    logger.error(f"[ERROR] JPEG encoding failed for camera {cam_id}")
                     continue
 
                 yield (b'--frame\r\n'
@@ -223,7 +223,6 @@ async def clear_count():
     points = await Repo.select_coordinates_by_id(cam_id)
     await camera_manager.get_frame_with_motion_detection(
         cam_id,
-        enable_motion=True,
         points=points,
         reset_counter=True
     )
