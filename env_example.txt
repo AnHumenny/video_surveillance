@@ -1,0 +1,22 @@
+SIZE_VIDEO=1920,1080
+DATABASE="db_camera"
+ADMIN="name"
+PASSWORD="password"
+SECRET_KEY=    key app
+HOST="127.0.0.1"
+PORT="8006"
+CAM_HOST="192.168.1.1"
+SUBNET_MASK="24"
+TOKEN_TIME_AUTHORIZATION=12
+CLOUDFIRE_URL="address"
+
+SENDER_EMAIL="email"
+SENDER_PASSWORD="app password for email sender"
+SMTP_PORT=587
+SMTP_SERVER="smtp.xxxx"
+RECIPIENT_EMAIL="email recipient"
+
+TELEGRAM_BOT_TOKEN="tg token"
+TELEGRAM_CHAT_ID=tg chat id
+
+BOT_SEND_VIDEO=5
