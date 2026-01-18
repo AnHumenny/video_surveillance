@@ -1,4 +1,6 @@
 from celery import Celery
+from celery.schedules import crontab
+
 
 def make_celery():
     celery = Celery(
@@ -11,9 +13,17 @@ def make_celery():
         task_serializer='json',
         accept_content=['json'],
         result_serializer='json',
-        timezone='UTC',
+        timezone='Europe/Moscow',
         enable_utc=True,
         worker_hijack_root_logger=False,
+    )
+    celery.conf.update(
+        beat_schedule={
+            'weekly-recordings-cleanup': {
+                'task': 'celery_task.tasks.cleanup_weekly',
+                'schedule': crontab(hour=0, minute=0, day_of_week=0),
+            },
+        },
     )
     return celery
 

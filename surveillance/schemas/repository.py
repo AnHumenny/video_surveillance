@@ -7,6 +7,7 @@ from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
 from surveillance.schemas.database import DCamera, DUser, DFindCamera
 import os
 import re
+import asyncio
 from logs.logging_config import logger
 from config.config import new_session
 
@@ -690,3 +691,23 @@ class Userbot:
             answer.active = 0
             await session.commit()
             return answer
+
+
+class TaskCelery:
+
+    @classmethod
+    def select_cameras_ids_sync(cls):
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        return loop.run_until_complete(cls.select_cameras_ids())
+
+    @classmethod
+    async def select_cameras_ids(cls):
+        async with new_session() as session:
+            q = select(DCamera.id)
+            result = await session.execute(q)
+            return result.scalars().all()

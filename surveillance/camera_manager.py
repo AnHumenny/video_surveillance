@@ -295,7 +295,7 @@ class CameraManager:
         now = datetime.now()
         filename = f"{cam_id}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
         current_stamp = now.strftime("%Y-%m-%d")
-        save_path = os.path.join("media", "recordings", cam_id, f"camera_{cam_id}_{current_stamp}")
+        save_path = os.path.join("media", "recordings", cam_id, f"{cam_id}_{current_stamp}")
         os.makedirs(save_path, exist_ok=True)
         return os.path.join(save_path, filename)
 

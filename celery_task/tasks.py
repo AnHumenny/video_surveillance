@@ -1,13 +1,15 @@
+import shutil
 import requests
 import os
 import smtplib
 import time
 from email.mime.text import MIMEText
-from datetime import datetime
+from datetime import datetime, timedelta
 from celery_task.celery_app import celery
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+from surveillance.schemas.repository import Repo, TaskCelery
 import httpx
 from dotenv import load_dotenv
 import logging
@@ -128,3 +130,153 @@ def send_telegram_video(cam_id: str, video_path: str, chat_id: int) -> str:
 
     except Exception as e:
         return f"Exception when sending video: {e}"
+
+
+def get_absolute_recordings_path(camera_id="1"):
+
+    current_file = os.path.abspath(__file__)
+    logger.debug(f"Текущий файл: {current_file}")
+
+    current_dir = os.path.dirname(current_file)
+    logger.debug(f"Текущая папка (celery_task): {current_dir}")
+
+    project_dir = os.path.dirname(current_dir)
+    logger.debug(f"Папка проекта: {project_dir}")
+
+    recordings_path = os.path.join(project_dir, "media", "recordings", str(camera_id))
+    logger.debug(f"Путь к recordings камеры {camera_id}: {recordings_path}")
+
+    return recordings_path
+
+
+@celery.task
+def delete_old_folders(camera_ids, days_threshold=7):
+
+    logger.info("=" * 50)
+    logger.info(f"НАЧАЛО ОЧИСТКИ. Порог: {days_threshold} дней")
+
+    if camera_ids is None:
+        camera_ids = []
+        base_file = os.path.abspath(__file__)
+        base_dir = os.path.dirname(os.path.dirname(base_file))
+        recordings_base = os.path.join(base_dir, "media", "recordings")
+
+        if os.path.exists(recordings_base):
+            for item in os.listdir(recordings_base):
+                item_path = os.path.join(recordings_base, item)
+                if os.path.isdir(item_path) and item.isdigit():
+                    camera_ids.append(item)
+
+    camera_ids = [str(cam_id) for cam_id in camera_ids if cam_id]
+
+    if not camera_ids:
+        logger.warning(f"Нет камер для обработки")
+        return {"error": "No cameras found", "camera_ids": []}
+
+    logger.info(f"Обрабатываем камеры: {camera_ids}")
+
+    threshold_date = datetime.now() - timedelta(days=days_threshold)
+    logger.info(f"Пороговая дата: {threshold_date.strftime('%Y-%m-%d')}")
+
+    deleted_folders = []
+    errors = []
+
+    for camera_id in camera_ids:
+        try:
+            camera_id_str = str(camera_id).strip()
+
+            camera_path = get_absolute_recordings_path(camera_id_str)
+            logger.info(f"\nКамера {camera_id_str}: {camera_path}")
+
+            if not os.path.exists(camera_path):
+                error_msg = f"Папка камеры {camera_id_str} не существует: {camera_path}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+                continue
+
+            try:
+                items = os.listdir(camera_path)
+            except PermissionError as e:
+                error_msg = f"Нет доступа к папке камеры {camera_id_str}: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+                continue
+
+            logger.info(f"Найдено папок: {len(items)}")
+
+            for folder_name in items:
+                folder_path = os.path.join(camera_path, folder_name)
+
+                if not os.path.isdir(folder_path):
+                    continue
+
+                try:
+                    folder_date = datetime.strptime(folder_name, '%Y-%m-%d')
+
+                    if folder_date < threshold_date:
+                        logger.info(f"  УДАЛЯЕМ: {folder_name} (дата: {folder_date.date()})")
+
+                        try:
+                            shutil.rmtree(folder_path)
+                            deleted_folders.append({
+                                'camera_id': camera_id_str,
+                                'folder_name': folder_name,
+                                'folder_date': folder_date.strftime('%Y-%m-%d'),
+                                'path': folder_path
+                            })
+                            logger.info(f"    ✓ Папка удалена")
+                        except Exception as e:
+                            error_msg = f"    ✗ Ошибка при удалении {folder_path}: {str(e)}"
+                            logger.error(error_msg)
+                            errors.append(error_msg)
+                    else:
+                        logger.debug(f"  ОСТАВЛЯЕМ: {folder_name} (дата: {folder_date.date()}, еще актуальна)")
+
+                except ValueError:
+                    logger.debug(f"  ПРОПУСКАЕМ: {folder_name} (не формат даты)")
+                    continue
+
+        except Exception as e:
+            error_msg = f"Ошибка при обработке камеры {camera_id}: {str(e)}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+
+    result = {
+        'success': len(errors) == 0,
+        'threshold_date': threshold_date.strftime('%Y-%m-%d'),
+        'days_threshold': days_threshold,
+        'camera_ids': camera_ids,
+        'deleted_folders': deleted_folders,
+        'deleted_count': len(deleted_folders),
+        'errors': errors,
+        'error_count': len(errors),
+        'timestamp': datetime.now().isoformat()
+    }
+
+    logger.info("\n" + "=" * 50)
+    logger.info("ИТОГИ ОЧИСТКИ:")
+    logger.info(f"Удалено папок: {len(deleted_folders)}")
+    logger.info(f"Ошибок: {len(errors)}")
+
+    if deleted_folders:
+        logger.info("Удаленные папки:")
+        for folder in deleted_folders:
+            logger.info(f"  • Камера {folder['camera_id']}: {folder['folder_name']}")
+
+    if errors:
+        logger.warning("Ошибки:")
+        for error in errors:
+            logger.warning(f"  • {error}")
+
+    logger.info("=" * 50)
+
+    return result
+
+
+@celery.task
+def cleanup_weekly():
+    camera_ids = TaskCelery.select_cameras_ids_sync()
+    logger.info(f"Камеры из БД: {camera_ids}")
+    logger.info("Запуск еженедельной очистки записей")
+
+    return delete_old_folders.delay(camera_ids=camera_ids, days_threshold=2)
