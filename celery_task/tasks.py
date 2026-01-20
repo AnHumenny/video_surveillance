@@ -150,7 +150,7 @@ def get_absolute_recordings_path(camera_id="1"):
 
 
 @celery.task
-def delete_old_folders(camera_ids, days_threshold=7):
+def delete_old_folders(camera_ids, days_threshold=7):        # добавить в интерфейс админки
 
     logger.info("=" * 50)
     logger.info(f"НАЧАЛО ОЧИСТКИ. Порог: {days_threshold} дней")
@@ -224,16 +224,16 @@ def delete_old_folders(camera_ids, days_threshold=7):
                                 'folder_date': folder_date.strftime('%Y-%m-%d'),
                                 'path': folder_path
                             })
-                            logger.info(f"    ✓ Папка удалена")
+                            logger.info(f"Папка удалена")
                         except Exception as e:
-                            error_msg = f"    ✗ Ошибка при удалении {folder_path}: {str(e)}"
+                            error_msg = f"Ошибка при удалении {folder_path}: {str(e)}"
                             logger.error(error_msg)
                             errors.append(error_msg)
                     else:
-                        logger.debug(f"  ОСТАВЛЯЕМ: {folder_name} (дата: {folder_date.date()}, еще актуальна)")
+                        logger.debug(f"ОСТАВЛЯЕМ: {folder_name} (дата: {folder_date.date()}, еще актуальна)")
 
                 except ValueError:
-                    logger.debug(f"  ПРОПУСКАЕМ: {folder_name} (не формат даты)")
+                    logger.debug(f"ПРОПУСКАЕМ: {folder_name} (не формат даты)")
                     continue
 
         except Exception as e:
