@@ -21,7 +21,8 @@ from dotenv import load_dotenv
 from celery_task import tasks
 from surveillance.schemas.repository import Repo
 from surveillance.camera_manager import CameraManager
-from logs.logging_config import logger
+from logs.logging_config import get_logger
+logger = get_logger()
 
 
 load_dotenv()

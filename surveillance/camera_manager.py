@@ -9,7 +9,8 @@ import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from surveillance.schemas.repository import Repo
-from logs.logging_config import logger
+from logs.logging_config import get_logger
+logger = get_logger()
 
 
 class CameraManager:

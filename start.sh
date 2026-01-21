@@ -52,7 +52,18 @@ echo "[INFO] Starting bot.app..."
 python3 -m bot.app &
 echo "$!" > bot.pid
 
+# Создаем папку для логов с текущей датой
+LOG_DATE=$(date +"%Y-%m-%d")
+LOG_DIR="logs/$LOG_DATE"
+mkdir -p "$LOG_DIR"
+
+# Файлы логов БЕЗ даты в имени, но внутри папки с датой
+CELERY_WORKER_LOGFILE="$LOG_DIR/celery_worker.log"
+CELERY_BEAT_LOGFILE="$LOG_DIR/celery_beat.log"
+
+# Остальные переменные оставляем как есть
 CELERY_WORKER_NAME="worker_$(date +%s)_${RANDOM}_$$"
+
 echo "[INFO] Starting Celery worker with log file: $CELERY_WORKER_LOGFILE"
 celery -A celery_task worker \
     --loglevel=info \
@@ -61,16 +72,16 @@ celery -A celery_task worker \
     --logfile="$CELERY_WORKER_LOGFILE" \
     --time-limit=300 \
     --soft-time-limit=280 &
-echo "$!" > celery_worker.pid
+echo "$!" > "$LOG_DIR/celery_worker.pid"
 sleep 2
 
 echo "[INFO] Starting Celery beat with log file: $CELERY_BEAT_LOGFILE"
 celery -A celery_task beat \
     --loglevel=info \
     --logfile="$CELERY_BEAT_LOGFILE" \
-    --pidfile="celerybeat.pid" \
-    --schedule="celerybeat-schedule" &
-echo "$!" > celery_beat.pid
+    --pidfile="$LOG_DIR/celerybeat.pid" \
+    --schedule="$LOG_DIR/celerybeat-schedule.db" &
+echo "$!" > "$LOG_DIR/celery_beat.pid"
 
 echo "[INFO] All processes started. Check logs/start.log and celery logs for details."
 echo "[INFO] Processes:"

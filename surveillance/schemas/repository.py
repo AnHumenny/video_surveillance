@@ -8,7 +8,8 @@ from surveillance.schemas.database import DCamera, DUser, DFindCamera
 import os
 import re
 import asyncio
-from logs.logging_config import logger
+from logs.logging_config import get_logger
+logger = get_logger()
 from config.config import new_session
 
 
@@ -694,9 +695,26 @@ class Userbot:
 
 
 class TaskCelery:
+    """Class for handling Celery tasks related to camera operations.
+
+    This class provides both synchronous and asynchronous methods for
+    retrieving camera IDs from the database. Designed to work in Celery
+    task environments where both sync and async contexts may be needed.
+    """
 
     @classmethod
     def select_cameras_ids_sync(cls):
+        """
+        Synchronously retrieve all camera IDs from the database.
+
+        This method provides a synchronous wrapper around the async method.
+        It handles event loop creation/retrieval to ensure proper execution
+        in synchronous contexts like Celery tasks.
+
+        Returns:
+            List[int]: A list of all camera IDs
+        """
+
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
@@ -707,6 +725,16 @@ class TaskCelery:
 
     @classmethod
     async def select_cameras_ids(cls):
+        """
+        Asynchronously retrieve all camera IDs from the database.
+
+        This is the core async method that executes the database query.
+        Uses an async database session to fetch all camera IDs.
+
+        Returns:
+            List[int]: A list of all camera IDs
+        """
+
         async with new_session() as session:
             q = select(DCamera.id)
             result = await session.execute(q)
