@@ -20,7 +20,6 @@ PYTHONPATH="$(pwd):$PYTHONPATH"
 export PYTHONPATH
 
 mkdir -p logs
-exec > >(tee -a logs/start.log) 2>&1
 
 echo "[INFO] Checking existing processes..."
 ps aux | grep -E 'python3|celery|bot.app|ffmpeg' | grep -v grep || true
@@ -52,16 +51,13 @@ echo "[INFO] Starting bot.app..."
 python3 -m bot.app &
 echo "$!" > bot.pid
 
-# Создаем папку для логов с текущей датой
 LOG_DATE=$(date +"%Y-%m-%d")
 LOG_DIR="logs/$LOG_DATE"
 mkdir -p "$LOG_DIR"
 
-# Файлы логов БЕЗ даты в имени, но внутри папки с датой
 CELERY_WORKER_LOGFILE="$LOG_DIR/celery_worker.log"
 CELERY_BEAT_LOGFILE="$LOG_DIR/celery_beat.log"
 
-# Остальные переменные оставляем как есть
 CELERY_WORKER_NAME="worker_$(date +%s)_${RANDOM}_$$"
 
 echo "[INFO] Starting Celery worker with log file: $CELERY_WORKER_LOGFILE"

@@ -52,7 +52,6 @@ async def generate_frames(cap, cam_id):
         try:
             ret, frame = cap.read()
             if not ret or frame is None:
-                logger.error(f"The frame is discarded for the camera {cam_id}")
                 break
             size_video = os.getenv("SIZE_VIDEO")
             if size_video:
@@ -62,7 +61,6 @@ async def generate_frames(cap, cam_id):
             frame = cv2.resize(frame, (width, height))
             ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             if not ret:
-                logger.error(f"Frame encoding error for camera {cam_id}")
                 continue
 
             frame_data = buffer.tobytes()
@@ -71,7 +69,6 @@ async def generate_frames(cap, cam_id):
             await asyncio.sleep(0.03)
 
         except Exception as err:
-            logger.error(f"Frame encoding error for camera {cam_id}: {err}")
             break
 
 
@@ -161,7 +158,6 @@ async def video_feed(cam_id):
                 if frame is None:
                     empty_in_row += 1
                     if empty_in_row >= max_empty:
-                        logger.error(f"[ERROR] Camera {cam_id} is not available >{max_empty} empty frames")
                         break
                     await asyncio.sleep(0.05)
                     continue
@@ -259,7 +255,6 @@ async def scan_network_for_rtsp():
                         'ip': host,
                         'port': port,
                     })
-                    logger.info(f"[INFO] Found potential RTSP device at {host}:{port}")
     return jsonify(rtsp_devices)
 
 
@@ -581,7 +576,6 @@ async def save_camera_zone():
     elif isinstance(result, Exception):
         return jsonify({"message": f"Error: {str(result)}"}), 500
     else:
-        logger.info("[INFO] Coordinates saved")
         return jsonify({"message": result, "coordinates": coordinates}), 200
 
 
@@ -648,7 +642,6 @@ shutdown_event = asyncio.Event()
 
 def handle_shutdown():
     """signal handler for application shutdown."""
-    logger.info("[INFO] Shutdown signal received")
     shutdown_event.set()
 
 
