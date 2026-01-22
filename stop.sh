@@ -11,6 +11,11 @@ echo "[INFO] Purging Celery tasks..."
 celery -A celery_task purge -f || echo "[WARNING] Failed to purge Celery tasks."
 sleep 2
 
+echo "[INFO] Stopping Celery Beat..."
+pkill -f "celery -A celery_task beat" || true
+sleep 1
+pkill -9 -f "celery -A celery_task beat" 2>/dev/null || true
+
 echo "[INFO] Shutting down Celery workers..."
 celery -A celery_task control shutdown || echo "[WARNING] Celery shutdown failed, workers may already be stopped."
 sleep 5
@@ -61,6 +66,6 @@ pgrep -af celery || echo "[INFO] No celery processes."
 echo "[INFO] Active bot.app processes:"
 pgrep -af "python3 -m bot.app" || echo "[INFO] No bot.app processes."
 
-rm -f main.pid bot.pid celery_task.pid || true
+rm -f main.pid bot.pid celery_task.pid celerybeat.pid celerybeat-schedule* || true
 
 exit 0

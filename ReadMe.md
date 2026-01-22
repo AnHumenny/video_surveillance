@@ -27,7 +27,7 @@ sudo apt install -y libgl1 nmap ffmpeg
  python3 -m venv .venv
 ``` 
 
-### Linux/macOS
+### Linux
 ```bash
  source .venv/bin/activate
 ```
@@ -111,7 +111,10 @@ video_surveillance/
 │   ├── add_user.py
 │   └── install.py
 │
-├── logs/                               # Логи приложения
+├── logs/                               
+    ├── YYYY-MM-DD/*                    # Логи приложения
+    └── logging_config.py
+│    
 ├── media/                              # Медиафайлы
 │   ├── recordings/                         # Записи видео
 │   ├── screenshots/                        # Скриншоты
@@ -146,12 +149,9 @@ video_surveillance/
 ├── .dockerignore                       # Docker игнорирование
 ├── .env                                # Переменные окружения
 ├── .gitignore                          # Git игнорирование
-├── bot_app.spec                        # Спецификация для сборки бота
-├── celery.pid                          # PID файл Celery
 ├── db_camera.db                        # База данных SQLite
 ├── Dockerfile                          # Docker конфигурация
 ├── env_example.txt                     # Пример .env файла
-├── main.spec                           # Спецификация для сборки main
 ├── README.md                           # Документация проекта
 ├── requirements.txt                    # Зависимости Python
 ├── start.sh                            # Скрипт запуска
