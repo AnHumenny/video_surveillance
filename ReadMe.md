@@ -20,13 +20,6 @@ sudo apt update
 sudo apt install -y libgl1 nmap ffmpeg
 ```
 
-### **Windows**
-Установите Python 3.12+ (обязательно выберите опцию "Add Python to PATH")
-
-Установите Nmap для Windows
-
-Для OpenCV может понадобиться установить Microsoft Visual C++ Redistributable
-
 ### 2. Настройка Python окружения
 
 #### Создайте и активируйте виртуальное окружение
@@ -34,14 +27,9 @@ sudo apt install -y libgl1 nmap ffmpeg
  python3 -m venv .venv
 ``` 
 
-### Linux/macOS
+### Linux
 ```bash
  source .venv/bin/activate
-```
-
-### Windows (PowerShell)
-```bash
-.venv\Scripts\activate
 ```
 
 ### Установите Python-зависимости
@@ -123,7 +111,10 @@ video_surveillance/
 │   ├── add_user.py
 │   └── install.py
 │
-├── logs/                               # Логи приложения
+├── logs/                               
+    ├── YYYY-MM-DD/*                    # Логи приложения
+    └── logging_config.py
+│    
 ├── media/                              # Медиафайлы
 │   ├── recordings/                         # Записи видео
 │   ├── screenshots/                        # Скриншоты
