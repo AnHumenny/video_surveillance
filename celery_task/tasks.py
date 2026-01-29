@@ -9,7 +9,7 @@ from celery_task.celery_app import celery
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-from surveillance.schemas.repository import Repo, TaskCelery
+from surveillance.schemas.repository import TaskCelery
 import httpx
 from dotenv import load_dotenv
 import logging

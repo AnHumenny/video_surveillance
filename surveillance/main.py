@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 from celery_task import tasks
-from surveillance.schemas.repository import Repo
+from surveillance.schemas.repository import Cameras, User
 from surveillance.camera_manager import CameraManager
 from logs.logging_config import get_logger
 logger = get_logger()
@@ -46,7 +46,7 @@ async def setup_camera_manager():
     await camera_manager.initialize()
 
 
-async def generate_frames(cap, cam_id):
+async def generate_frames(cap):
     """frame streaming generator"""
     while True:
         try:
@@ -129,10 +129,10 @@ async def video_feed(cam_id):
     """Stream video feed with motion detection and optional screenshot saving."""
     if camera_manager is None:
         return "CameraManager not initialized", 500
-    allowed_ids = await Repo.get_allowed_chat_ids()
+    allowed_ids = await User.get_allowed_chat_ids()
 
     async def stream():
-        config = await Repo.select_cam_config(cam_id)
+        config = await Cameras.select_cam_config(cam_id)
 
         show_zone = config.get("status_cam", True)
         save_screenshot = config.get("screen_cam", False)
@@ -143,7 +143,7 @@ async def video_feed(cam_id):
         empty_in_row = 0
         max_empty = 10
 
-        points = await Repo.select_coordinates_by_id(cam_id)
+        points = await Cameras.select_coordinates_by_id(cam_id)
 
         try:
             while True:
@@ -205,7 +205,7 @@ async def update_route():
     form_data = await request.form
     cam_host = form_data.get("cam_host")
     subnet_mask = form_data.get("subnet_mask")
-    await Repo.update_find_camera(cam_host, subnet_mask)
+    await Cameras.update_find_camera(cam_host, subnet_mask)
     return redirect(url_for('control'))
 
 
@@ -217,7 +217,7 @@ async def clear_count():
     cam_id = data.get("cam_id")
     if not cam_id:
         return "cam_id is required", 400
-    points = await Repo.select_coordinates_by_id(cam_id)
+    points = await Cameras.select_coordinates_by_id(cam_id)
     await camera_manager.get_frame_with_motion_detection(
         cam_id,
         points=points,
@@ -231,11 +231,11 @@ async def clear_count():
 @token_required
 async def scan_network_for_rtsp():
     """Scan the local network to find devices with open RTSP port."""
-    network_range = await Repo.select_find_cam()
+    network_range = await Cameras.select_find_cam()
     rtsp_not_found = [f"Within the specified range {network_range} no cameras found!"]
     if not network_range:
         return jsonify(rtsp_not_found)
-    list_rtsp = await Repo.select_ip_cameras()
+    list_rtsp = await Cameras.select_ip_cameras()
     try:
         nm = nmap.PortScanner()
         nm.scan(hosts=network_range, arguments='-p 554,8554 --open')
@@ -266,9 +266,9 @@ def mask_rtsp_credentials(url: str) -> str:
 @token_required
 async def control():
     """control panel."""
-    all_cameras = await Repo.select_all_cam()
-    all_users = await Repo.select_all_users()
-    current_range = await Repo.select_find_cam()
+    all_cameras = await Cameras.select_all_cam()
+    all_users = await User.select_all_users()
+    current_range = await Cameras.select_find_cam()
     masked_urls = {cam.id: mask_rtsp_credentials(cam.path_to_cam) for cam in all_cameras}
     user_host = os.getenv("HOST")
     user_port = os.getenv("PORT")
@@ -280,7 +280,7 @@ async def control():
 
 async def list_all_cameras():
     """list of all cameras."""
-    q = await Repo.select_all_cam()
+    q = await Cameras.select_all_cam()
     if not q:
         return {"message": "Камер не найдено!"}
     return await render_template('control.html', status='admin')
@@ -290,7 +290,7 @@ async def list_all_cameras():
 @token_required
 async def delete_camera(ssid):
     """deleting camera by id"""
-    success = await Repo.drop_camera(ssid)
+    success = await Cameras.drop_camera(ssid)
     if success:
         return redirect(url_for('control'))
     return jsonify({"error": "Camera not found"}), 404
@@ -303,7 +303,7 @@ async def delete_user(ssid):
     if ssid == 1:
         await flash("Superadmin is not deleted", "admin_not_deleted")
         return redirect(url_for('control'))
-    success = await Repo.drop_user(ssid)
+    success = await User.drop_user(ssid)
     if success:
         await flash("User successfully deleted", "user_deleted")
         return redirect(url_for('control'))
@@ -329,7 +329,7 @@ async def add_new_camera():
     if query is False:
         await flash("Error: Invalid RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    q = await Repo.add_new_cam(new_cam, int(motion_detection), int(visible_cam), int(screen_cam),
+    q = await Cameras.add_new_cam(new_cam, int(motion_detection), int(visible_cam), int(screen_cam),
                                int(send_email), int(send_tg))
     if q is False:
         await flash("Camera not added: such URL already exists or an error occurred!",
@@ -341,7 +341,7 @@ async def add_new_camera():
 
 async def select_all_users():
     """list of all users"""
-    q = Repo.select_all_users()
+    q = User.select_all_users()
     return q
 
 
@@ -361,7 +361,7 @@ async def add_new_user():
         await flash("Password structure does not match!", "password_error")
         return redirect(url_for("control"))
     pswrd = hash_password(password)
-    q = await Repo.add_new_user(user, pswrd, status, tg_id, active)
+    q = await User.add_new_user(user, pswrd, status, tg_id, active)
     if q is False:
         await flash("This user already exists!", "user_error")
         return redirect(url_for("control"))
@@ -386,7 +386,7 @@ async def edit_cam():
     if query is False:
         await flash("Error: Incorrect RTSP URL", "rtsp_error")
         return redirect(url_for("control"))
-    await Repo.edit_camera(ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
+    await Cameras.edit_camera(ssid, path_to_cam, motion_detection, visible_camera, screen_cam,
                            send_mail, send_telegram, send_video_tg,
                            )
     await flash("Camera updated successfully!", "user_success")
@@ -427,7 +427,7 @@ async def login():
     username = form_data.get('user')
     password = form_data.get('password')
     hashed_password = hash_password(password)
-    user = await Repo.auth_user(username, hashed_password)
+    user = await User.auth_user(username, hashed_password)
 
     if user:
         status = user.status  # type: ignore
@@ -528,7 +528,7 @@ async def take_screenshot(cam_id):
 @token_required
 async def camera_snapshot():
     cam_id = request.args.get("cam_id")
-    result = await Repo.select_path_to_cam(int(cam_id))
+    result = await Cameras.select_path_to_cam(int(cam_id))
     cap = cv2.VideoCapture(result)
     ret, frame = cap.read()
     cap.release()
@@ -569,7 +569,7 @@ async def save_camera_zone():
         "coordinate_y2": f"{coordinates[2][0]}, {coordinates[2][1]}",
     }
 
-    result = await Repo.update_coord(**update_data)
+    result = await Cameras.update_coord(**update_data)
 
     if result is False:
         return jsonify({"message": "Coordinate update error"}), 500

@@ -66,6 +66,6 @@ pgrep -af celery || echo "[INFO] No celery processes."
 echo "[INFO] Active bot.app processes:"
 pgrep -af "python3 -m bot.app" || echo "[INFO] No bot.app processes."
 
-rm -f main.pid bot.pid celery_task.pid celerybeat.pid celerybeat-schedule* || true
+rm -f main.pid bot.pid celery_task.pid celery_beat.pid celery_beat-schedule* || true
 
 exit 0

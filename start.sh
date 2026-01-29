@@ -22,7 +22,7 @@ export PYTHONPATH
 mkdir -p logs
 
 echo "[INFO] Checking existing processes..."
-ps aux | grep -E 'python3|celery|bot.app|ffmpeg' | grep -v grep || true
+pgrep aux | grep -E 'python3|celery|bot.app|ffmpeg' | grep -v grep || true
 
 echo "[INFO] Checking port..."
 lsof -i :"$PORT" || true
@@ -75,13 +75,13 @@ echo "[INFO] Starting Celery beat with log file: $CELERY_BEAT_LOGFILE"
 celery -A celery_task beat \
     --loglevel=info \
     --logfile="$CELERY_BEAT_LOGFILE" \
-    --pidfile="$LOG_DIR/celerybeat.pid" \
-    --schedule="$LOG_DIR/celerybeat-schedule.db" &
+    --pidfile="$LOG_DIR/celery_beat.pid" \
+    --schedule="$LOG_DIR/celery_beat-schedule.db" &
 echo "$!" > "$LOG_DIR/celery_beat.pid"
 
 echo "[INFO] All processes started. Check logs/start.log and celery logs for details."
 echo "[INFO] Processes:"
 echo "  Main: $(cat main.pid)"
 echo "  Bot: $(cat bot.pid)"
-echo "  Celery Worker: $(cat celery_worker.pid)"
-echo "  Celery Beat: $(cat celery_beat.pid)"
+echo "  Celery Worker: $(cat "$LOG_DIR/celery_worker.pid")"
+echo "  Celery Beat: $(cat "$LOG_DIR/celery_beat.pid")"
