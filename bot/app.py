@@ -17,7 +17,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from surveillance.main import force_start_cam
 
 from bot import lists
-from surveillance.schemas.repository import  Userbot, Repo
+from surveillance.schemas.repository import  Userbot, Cameras
 from dotenv import load_dotenv
 
 API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -384,7 +384,7 @@ CALLBACK_ACTIONS: Dict[str, Callable] = {
 @token_required
 async def screen(message: types.Message, state: FSMContext):
     """Enable/disable sending screenshot to TG"""
-    camera_objects = await Repo.select_all_cam()
+    camera_objects = await Cameras.select_all_cam()
     camera_ids = [str(cam.id) for cam in camera_objects]
 
     await state.update_data(camera_ids=camera_ids)
@@ -409,7 +409,7 @@ async def screen(message: types.Message, state: FSMContext):
 @token_required
 async def movie(message: types.Message, state: FSMContext):
     """Enable/disable sending short videos to TG"""
-    camera_objects = await Repo.select_all_cam()
+    camera_objects = await Cameras.select_all_cam()
     camera_ids = [str(cam.id) for cam in camera_objects]
 
     await state.update_data(camera_ids=camera_ids)
@@ -434,7 +434,7 @@ async def movie(message: types.Message, state: FSMContext):
 @token_required
 async def reinit_cam(message: types.Message, state: FSMContext):
     """Reinitialize the selected camera"""
-    camera_objects = await Repo.select_all_cam()
+    camera_objects = await Cameras.select_all_cam()
     camera_ids = [str(cam.id) for cam in camera_objects]
 
     await state.update_data(camera_ids=camera_ids)

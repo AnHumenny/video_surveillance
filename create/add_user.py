@@ -16,8 +16,8 @@ def insert_into_user():
     base_dir = os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))
     db_path = os.path.join(base_dir, f'{name_db}.db')
+    conn = sqlite3.connect(db_path)
     try:
-        conn = sqlite3.connect(db_path)
         sql = f'''INSERT INTO {user_table} (user, password, status) VALUES (?, ?, ?)'''
         conn.execute(sql, user_info)
         conn.commit()
@@ -25,6 +25,7 @@ def insert_into_user():
     except sqlite3.Error as e:
         print(f'Ошибка при добавлении пользователя: {e}')
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 insert_into_user()

@@ -13,7 +13,7 @@ logger = get_logger()
 from config.config import new_session
 
 
-class Repo:
+class User:
 
     @classmethod
     async def auth_user(cls, username, password):
@@ -39,8 +39,6 @@ class Repo:
                 return None
             return answer
 
-
-
     @classmethod
     async def select_users(cls):
         """Select all users.
@@ -59,6 +57,108 @@ class Repo:
             q = select(DUser)
             result = await session.execute(q)
             return result.scalars().all()
+
+    @classmethod
+    async def select_all_users(cls):
+        """Select all users from database, returning id, user, status fields.
+
+        Args:
+            cls: Class reference (unused).
+
+        Returns:
+            List of tuples containing (id, user, status) for each user.
+
+        Raises:
+            Exception: If query fails, with rollback performed.
+        """
+        async with new_session() as session:
+            try:
+                q = select(DUser.id, DUser.user, DUser.status)
+                result = await session.execute(q)
+                users = result.all()
+                return users
+            except Exception as e:
+                logger.error(f"[ERROR] Ошибка: {e}")
+                raise e
+
+    @classmethod
+    async def add_new_user(cls, user, password, status, tg_id, active):
+        """Inserts a new user into the DUser table.
+
+            Args:
+                cls: Class reference (unused).
+                user: str
+                password: str (e.g. r'^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=S+$).{8,20}$').
+                status: str
+                tg_id: int
+                active: bool
+
+            Raises:
+                Exception: If insertion fails, with rollback performed.
+            """
+        async with new_session() as session:
+            async with session.begin():
+                try:
+                    q = insert(DUser).values(user=user, password=password, status=status,
+                                             tg_id=int(tg_id), active=active)
+                    await session.execute(q)
+                    await session.commit()
+                    return f"Пользователь {user} успешно добавлена!"
+                except IntegrityError as e:
+                    logger.error(f"[ERROR] Ошибка: {e}")
+                    await session.rollback()
+                    return False
+                except Exception as e:
+                    await session.rollback()
+                    logger.error(f"[ERROR] Ошибка: {e}")
+                    return e
+
+    @classmethod
+    async def drop_user(cls, ssid):
+        """Deletes a user record from the DUser table by ID.
+
+            Args:
+                cls: Class reference (unused).
+                ssid: ID of the user record to delete (converted to int).
+
+            Returns:
+                str: Success message if deletion succeeds, error message if record not found,
+                     False if an exception occurs.
+
+            Raises:
+                ValueError: If ssid cannot be converted to an integer.
+                NoResultFound: If no record matches the given ID.
+                IntegrityError: If deletion violates database constraints.
+                SQLAlchemyError: If other database errors occur.
+            """
+        async with new_session() as session:
+            ssid = int(ssid)
+            try:
+                query = select(DUser).where(DUser.id == int(ssid))  # type: ignore
+                result = await session.execute(query)
+                record = result.scalar_one_or_none()
+                if record is None:
+                    return f"Пользователь с указанным идентификатором {ssid} не найдена."
+                delete_query = delete(DUser).where(DUser.id == int(ssid))  # type: ignore
+                await session.execute(delete_query)
+                await session.commit()
+                return f"Пользователь с идентификатором {ssid} успешно удалёна!"
+            except (ValueError, NoResultFound, IntegrityError, SQLAlchemyError) as e:
+                logger.error("[ERROR]", e)
+                await session.rollback()
+                return False
+
+    @classmethod
+    async def get_allowed_chat_ids(cls) -> list[int]:
+        """Select all users from DB where active is True"""
+        async with new_session() as session:
+            result = await session.execute(
+                select(DUser.tg_id).where(DUser.active == True)
+            )
+            return [row[0] for row in result.all() if row[0] is not None]
+
+
+class Cameras:
 
     @classmethod
     async def select_cameras(cls):
@@ -328,30 +428,6 @@ class Repo:
                 }
 
     @classmethod
-    async def select_all_users(cls):
-        """Select all users from database, returning id, user, status fields.
-
-        Args:
-            cls: Class reference (unused).
-
-        Returns:
-            List of tuples containing (id, user, status) for each user.
-
-        Raises:
-            Exception: If query fails, with rollback performed.
-        """
-        async with new_session() as session:
-            try:
-                q = select(DUser.id, DUser.user, DUser.status)
-                result = await session.execute(q)
-                users = result.all()
-                return users
-            except Exception as e:
-                logger.error(f"[ERROR] Ошибка: {e}")
-                raise e
-
-
-    @classmethod
     async def add_new_cam(cls, new_cam, motion_detection, visible_cam, screen_cam, send_email, send_tg):
         """Inserts a new camera into the DCamera table.
 
@@ -391,39 +467,6 @@ class Repo:
                     return e
 
     @classmethod
-    async def add_new_user(cls, user, password, status, tg_id, active):
-        """Inserts a new user into the DUser table.
-
-            Args:
-                cls: Class reference (unused).
-                user: str
-                password: str (e.g. r'^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=S+$).{8,20}$').
-                status: str
-                tg_id: int
-                active: bool
-
-            Raises:
-                Exception: If insertion fails, with rollback performed.
-            """
-        async with new_session() as session:
-            async with session.begin():
-                try:
-                    q = insert(DUser).values(user=user, password=password, status=status,
-                                             tg_id=int(tg_id), active=active)
-                    await session.execute(q)
-                    await session.commit()
-                    return f"Пользователь {user} успешно добавлена!"
-                except IntegrityError as e:
-                    logger.error(f"[ERROR] Ошибка: {e}")
-                    await session.rollback()
-                    return False
-                except Exception as e:
-                    await session.rollback()
-                    logger.error(f"[ERROR] Ошибка: {e}")
-                    return e
-
-
-    @classmethod
     async def drop_camera(cls, ssid):
         """Deletes a camera record from the DCamera table by ID.
 
@@ -458,45 +501,9 @@ class Repo:
                 await session.rollback()
                 return False
 
-    @classmethod
-    async def drop_user(cls, ssid):
-        """Deletes a user record from the DUser table by ID.
-
-            Args:
-                cls: Class reference (unused).
-                ssid: ID of the user record to delete (converted to int).
-
-            Returns:
-                str: Success message if deletion succeeds, error message if record not found,
-                     False if an exception occurs.
-
-            Raises:
-                ValueError: If ssid cannot be converted to an integer.
-                NoResultFound: If no record matches the given ID.
-                IntegrityError: If deletion violates database constraints.
-                SQLAlchemyError: If other database errors occur.
-            """
-        async with new_session() as session:
-            ssid = int(ssid)
-            try:
-                query = select(DUser).where(DUser.id == int(ssid))  # type: ignore
-                result = await session.execute(query)
-                record = result.scalar_one_or_none()
-                if record is None:
-                    return f"Пользователь с указанным идентификатором {ssid} не найдена."
-                delete_query = delete(DUser).where(DUser.id == int(ssid))  # type: ignore
-                await session.execute(delete_query)
-                await session.commit()
-                return f"Пользователь с идентификатором {ssid} успешно удалёна!"
-            except (ValueError, NoResultFound, IntegrityError, SQLAlchemyError) as e:
-                logger.error("[ERROR]", e)
-                await session.rollback()
-                return False
-
-
     @staticmethod
     def select_all_cameras_to_json():
-        """Синхронная выборка всех камер из таблицы _camera в формате JSON-словаря."""
+        """Synchronous selection of all cameras from the _camera table in JSON dictionary format."""
         path_to_database = os.path.join("", f"{os.getenv('DATABASE')}.db")
         try:
             conn = sqlite3.connect(path_to_database)
@@ -513,7 +520,7 @@ class Repo:
 
     @staticmethod
     def reinit_camera(cam_id):
-        """Синхронная выборка одной активной камеры по id, возвращает JSON."""
+        """Synchronous selection of one active camera by id, returns JSON."""
         path_to_database = os.path.join("", f"{os.getenv('DATABASE')}.db")
         try:
             with sqlite3.connect(path_to_database) as conn:
@@ -540,7 +547,7 @@ class Repo:
 
             Args:
                 cls: Class reference (unused).
-                check_cam: str (e.g. rtsp://user:password@192.168.1.34:554/h265).
+                check_cam: str (e.g. rtsp://user:password@192.168.1.34:554).
             """
         async with new_session() as session:
             async with session.begin():
@@ -583,16 +590,6 @@ class Repo:
             except Exception as e:
                 logger.error(f"[ERROR] Failed to fetch coordinates: {e}")
                 return []
-
-    @classmethod
-    async def get_allowed_chat_ids(cls) -> list[int]:
-        """Select all users from DB where active is True"""
-        async with new_session() as session:
-            result = await session.execute(
-                select(DUser.tg_id).where(DUser.active == True)
-            )
-            return [row[0] for row in result.all() if row[0] is not None]
-
 
 class Userbot:
 

@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple, Any
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-from surveillance.schemas.repository import Repo
+from surveillance.schemas.repository import Cameras
 from logs.logging_config import get_logger
 logger = get_logger()
 
@@ -23,7 +23,7 @@ class CameraManager:
 
     def __init__(self, max_queue_size: int = 10, fps: float = 30.0):
         """Initialize CameraManager by loading configs and setting up runtime structures."""
-        camera_config_json = Repo.select_all_cameras_to_json()
+        camera_config_json = Cameras.select_all_cameras_to_json()
         self.recording_flags = {}
         self.recording_tasks = {}
         self.last_screenshot_times = {}
@@ -70,7 +70,7 @@ class CameraManager:
         Returns:
             bool: True if configs reloaded successfully, False on error.
         """
-        camera_config_json = Repo.select_all_cameras_to_json()
+        camera_config_json = Cameras.select_all_cameras_to_json()
         if not camera_config_json:
             logger.info("[WARN] Camera configuration not found in database.")
             return False
@@ -517,7 +517,7 @@ class CameraManager:
         Returns:
             True if the camera was successfully reinitialized, False otherwise.
         """
-        camera_config_json = Repo.reinit_camera(cam_id)
+        camera_config_json = Cameras.reinit_camera(cam_id)
         if not camera_config_json:
             return False
         try:

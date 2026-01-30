@@ -5,10 +5,11 @@ import time
 from dotenv import load_dotenv
 from sqlalchemy.future import select
 from surveillance.schemas.database import Model, DUser, DFindCamera
-from logs.logging_config import logger
+from logs.logging_config import get_logger
 from config.config import engine, new_session
 
 load_dotenv()
+logger = get_logger()
 
 password = hashlib.sha256(os.getenv("PASSWORD").encode()).hexdigest()
 user_info = {
