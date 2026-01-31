@@ -29,6 +29,10 @@ def make_celery():
                 'task': 'celery_task.tasks.cleanup_weekly',
                 'schedule': crontab(hour=0, minute=0, day_of_week=0),
             },
+            'old-logs-cleanup': {
+                'task': 'celery_task.tasks.delete_logs_weekly',
+                'schedule': crontab(hour=0, minute=1, day_of_week=0),
+            },
         },
     )
     return celery

@@ -428,7 +428,6 @@ class CameraManager:
         """
         loop = asyncio.get_running_loop()
         def open_cap():
-            logger.info(f"[INFO] Opening camera {cam_id}: {url}")
             capture = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             if not capture.isOpened():
                 capture.release()
