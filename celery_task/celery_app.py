@@ -26,7 +26,7 @@ def make_celery():
     celery.conf.update(
         beat_schedule={
             'weekly-recordings-cleanup': {
-                'task': 'celery_task.tasks.cleanup_weekly',
+                'task': 'celery_task.tasks.video_cleanup_weekly',
                 'schedule': crontab(hour=0, minute=0, day_of_week=0),
             },
             'old-logs-cleanup': {
