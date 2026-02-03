@@ -94,7 +94,8 @@ def delete_old_log_files(days_threshold=7):
                         errors.append(error_msg)
 
                 else:
-                    logger.debug(f"ОСТАВЛЯЕМ лог-папку: {folder_name} (дата: {folder_date.date()}, еще актуальна)")
+                    logger.debug(f"ОСТАВЛЯЕМ лог-папку: {folder_name} "
+                                 f"(дата: {folder_date.date()}, еще актуальна)")
 
             except ValueError:
                 logger.debug(f"ПРОПУСКАЕМ папку: {folder_name} (не формат даты YYYY-MM-DD)")
@@ -140,7 +141,7 @@ def delete_old_log_files(days_threshold=7):
     return result
 
 
-def delete_old_folders(camera_ids, days_threshold=7):
+def delete_old_folders(days_threshold=7):
     """Celery task to delete old recording folders for specified cameras.
 
     This task removes recording folders older than the specified threshold.
@@ -148,9 +149,6 @@ def delete_old_folders(camera_ids, days_threshold=7):
     the recordings directory structure.
 
     Args:
-        camera_ids (List[int/str] or None): List of camera IDs to process.
-            If None or empty, the task will discover camera IDs from the
-            recordings directory structure.
         days_threshold (int, optional): Number of days to keep recordings.
             Folders older than this threshold will be deleted. Defaults to 7.
 
@@ -170,97 +168,76 @@ def delete_old_folders(camera_ids, days_threshold=7):
     logger.info("=" * 50)
     logger.info(f"НАЧАЛО ОЧИСТКИ. Порог: {days_threshold} дней")
 
-    if camera_ids is None:
-        camera_ids = []
-        base_file = os.path.abspath(__file__)
-        base_dir = os.path.dirname(os.path.dirname(base_file))
-        recordings_base = os.path.join(base_dir, "media", "recordings")
+    base_file = os.path.abspath(__file__)
+    base_dir = os.path.dirname(os.path.dirname(base_file))
 
-        if os.path.exists(recordings_base):
-            for item in os.listdir(recordings_base):
-                item_path = os.path.join(recordings_base, item)
-                if os.path.isdir(item_path) and item.isdigit():
-                    camera_ids.append(item)
-
-    camera_ids = [str(cam_id) for cam_id in camera_ids if cam_id]
-
-    if not camera_ids:
-        logger.warning(f"Нет камер для обработки")
-        return {"error": "No cameras found", "camera_ids": []}
-
-    logger.info(f"Обрабатываем камеры: {camera_ids}")
-
+    recordings_base = os.path.join(base_dir, "media", "recordings")
     threshold_date = datetime.now() - timedelta(days=days_threshold)
-    logger.info(f"Пороговая дата: {threshold_date.strftime('%Y-%m-%d')}")
 
     deleted_folders = []
     errors = []
 
-    for camera_id in camera_ids:
-        try:
-            camera_id_str = str(camera_id).strip()
+    try:
+        items = os.listdir(recordings_base)
+        logger.info(f"Найдено элементов в media/recordings: {len(items)}")
 
-            camera_path = get_absolute_recordings_path(camera_id_str)
-            logger.info(f"\nКамера {camera_id_str}: {camera_path}")
+        for folder_name in items:
+            folder_path = os.path.join(recordings_base, folder_name)
 
-            if not os.path.exists(camera_path):
-                error_msg = f"Папка камеры {camera_id_str} не существует: {camera_path}"
-                logger.error(error_msg)
-                errors.append(error_msg)
+            if not os.path.isdir(folder_path):
+                logger.debug(f"ПРОПУСКАЕМ файл: {folder_name}")
                 continue
 
             try:
-                items = os.listdir(camera_path)
-            except PermissionError as e:
-                error_msg = f"Нет доступа к папке камеры {camera_id_str}: {str(e)}"
-                logger.error(error_msg)
-                errors.append(error_msg)
+                folder_date = datetime.strptime(folder_name, '%Y-%m-%d')
+
+                if folder_date < threshold_date:
+                    logger.info(f"  УДАЛЯЕМ папку: {folder_name} (дата: {folder_date.date()})")
+
+                    try:
+                        shutil.rmtree(folder_path)
+
+                        deleted_folders.append({
+                            'folder_name': folder_name,
+                            'folder_date': folder_date.strftime('%Y-%m-%d'),
+                            'path': folder_path,
+                        })
+
+                        logger.info(f"Папка с видео удалена: {folder_name}")
+
+                    except PermissionError as e:
+                        error_msg = f"Нет прав для удаления {folder_path}: {str(e)}"
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+
+                    except Exception as e:
+                        error_msg = f"Ошибка при удалении {folder_path}: {str(e)}"
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+
+                else:
+                    logger.debug(f"ОСТАВЛЯЕМ папку: {recordings_base}/{folder_name} "
+                                 f"(дата: {folder_date.date()}, еще актуальна)")
+
+            except ValueError:
+                logger.debug(f"ПРОПУСКАЕМ папку: {recordings_base}/{folder_name} "
+                             f"(не формат даты YYYY-MM-DD)")
                 continue
 
-            logger.info(f"Найдено папок: {len(items)}")
+    except PermissionError as e:
+        error_msg = f"Нет доступа к {recordings_base}: {str(e)}"
+        logger.error(error_msg)
+        errors.append(error_msg)
 
-            for folder_name in items:
-                folder_path = os.path.join(camera_path, folder_name)
-
-                if not os.path.isdir(folder_path):
-                    continue
-
-                try:
-                    folder_date = datetime.strptime(folder_name, '%Y-%m-%d')
-
-                    if folder_date < threshold_date:
-                        logger.info(f"  УДАЛЯЕМ: {folder_name} (дата: {folder_date.date()})")
-
-                        try:
-                            shutil.rmtree(folder_path)
-                            deleted_folders.append({
-                                'camera_id': camera_id_str,
-                                'folder_name': folder_name,
-                                'folder_date': folder_date.strftime('%Y-%m-%d'),
-                                'path': folder_path
-                            })
-                            logger.info(f"Папка удалена")
-                        except Exception as e:
-                            error_msg = f"Ошибка при удалении {folder_path}: {str(e)}"
-                            logger.error(error_msg)
-                            errors.append(error_msg)
-                    else:
-                        logger.debug(f"ОСТАВЛЯЕМ: {folder_name} (дата: {folder_date.date()}, еще актуальна)")
-
-                except ValueError:
-                    logger.debug(f"ПРОПУСКАЕМ: {folder_name} (не формат даты)")
-                    continue
-
-        except Exception as e:
-            error_msg = f"Ошибка при обработке камеры {camera_id}: {str(e)}"
-            logger.error(error_msg)
-            errors.append(error_msg)
+    except Exception as e:
+        error_msg = f"Ошибка при чтении {recordings_base}: {str(e)}"
+        logger.error(error_msg)
+        errors.append(error_msg)
 
     result = {
         'success': len(errors) == 0,
         'threshold_date': threshold_date.strftime('%Y-%m-%d'),
         'days_threshold': days_threshold,
-        'camera_ids': camera_ids,
         'deleted_folders': deleted_folders,
         'deleted_count': len(deleted_folders),
         'errors': errors,
@@ -274,14 +251,12 @@ def delete_old_folders(camera_ids, days_threshold=7):
     logger.info(f"Ошибок: {len(errors)}")
 
     if deleted_folders:
-        logger.info("Удаленные папки:")
-        for folder in deleted_folders:
-            logger.info(f"  • Камера {folder['camera_id']}: {folder['folder_name']}")
+        logger.info("Удаление прошло успешно.")
 
     if errors:
         logger.warning("Ошибки:")
         for error in errors:
-            logger.warning(f"  • {error}")
+            logger.warning(f"{error}")
 
     logger.info("=" * 50)
 

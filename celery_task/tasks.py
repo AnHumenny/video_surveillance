@@ -41,8 +41,7 @@ def send_telegram_video(cam_id: str, video_path: str, chat_id: int) -> str:
 def video_cleanup_weekly():                  # добавить в интерфейс админки
     """Celery task for performing weekly cleanup of old recordings."""
     # bool да/нет из админки
-    camera_ids = TaskCelery.select_cameras_ids_sync()
-    return delete_old_folders(camera_ids=camera_ids, days_threshold=7)
+    return delete_old_folders()
 
 
 @celery.task

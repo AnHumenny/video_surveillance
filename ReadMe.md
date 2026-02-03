@@ -116,8 +116,10 @@ video_surveillance/
     └── logging_config.py
 │    
 ├── media/                              # Медиафайлы
-│   ├── recordings/                         # Записи видео
-│   ├── screenshots/                        # Скриншоты
+│   ├── recordings                        # Записи видео
+│   │   └── YYYY-MM-DD
+│   │       └── (cam_1(2,3,etc)
+│   └── screenshots/                        # Скриншоты
 │   
 ├── screenshots/      
 │   └── current/                        # Текущие скриншоты
