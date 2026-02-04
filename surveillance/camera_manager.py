@@ -294,7 +294,7 @@ class CameraManager:
         now = datetime.now()
         filename = f"camera_{cam_id}_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
         current_stamp = now.strftime("%Y-%m-%d")
-        save_path = os.path.join("media", "recordings", cam_id, f"{current_stamp}")
+        save_path = os.path.join("media", "recordings", f"{current_stamp}", cam_id)
         os.makedirs(save_path, exist_ok=True)
         return os.path.join(save_path, filename)
 
@@ -428,7 +428,6 @@ class CameraManager:
         """
         loop = asyncio.get_running_loop()
         def open_cap():
-            logger.info(f"[INFO] Opening camera {cam_id}: {url}")
             capture = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             if not capture.isOpened():
                 capture.release()
