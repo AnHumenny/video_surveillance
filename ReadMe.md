@@ -51,7 +51,7 @@ sudo apt install -y libgl1 nmap ffmpeg
 Из корневой директории приложения выполните:
 
 ``` bash 
- python3 -m create.install
+ python3 -m surveillance.utils.install.install
 ```
 
 Запуск
@@ -73,20 +73,6 @@ chmod +x start.sh
 
 - Celery worker (celery_app.celery)
 
-### Альтернативный запуск вручную
-
-#### Запуск основного сервера
-``` bash
- python main.py
-```
-#### Запуск Telegram-бота (в отдельном терминале)
-``` bash
- python -m bot.app
-```
-#### Запуск Celery worker (в отдельном терминале)
-``` bash
- celery -A celery_app.celery worker --loglevel=info
-
 ```
 ### Структура проекта
 ```
@@ -95,7 +81,9 @@ video_surveillance/
 ├── bot/                                # Telegram-бот
 │   ├── __init__.py
 │   ├── app.py
-│   └── lists.py
+│   └── utils/
+│       ├── jwt_utils.py                # JWT токены и авторизация
+│       └── lists.py                    
 │
 ├── celery_task/                        # Celery задачи
 │   ├── __init__.py
@@ -106,14 +94,9 @@ video_surveillance/
 │   ├── __init__.py
 │   └── config.py
 │
-├── create/                             # Скрипты инициализации
-│   ├── add_cam.py
-│   ├── add_user.py
-│   └── install.py
-│
 ├── logs/                               
-    ├── YYYY-MM-DD/*                    # Логи приложения
-    └── logging_config.py
+│   ├── YYYY-MM-DD/*                    # Логи приложения
+│   └── logging_config.py
 │    
 ├── media/                              # Медиафайлы
 │   ├── recordings                        # Записи видео
@@ -127,7 +110,7 @@ video_surveillance/
 ├── surveillance/                       # Основной проект
 │   ├── __init__.py
 │   ├── camera_manager.py
-│   └── main.py
+│   ├── main.py
 │   │ 
 │   ├── schemas/                            # Схемы и модели БД
 │   │   ├── __init__.py
@@ -138,15 +121,20 @@ video_surveillance/
 │   │   ├── image/                          # Изображения интерфейса
 │   │   └── style/                          # Стили CSS
 │   │   
-│   └── templates/                          # HTML шаблоны
-│       ├── menu/                           # Шаблоны меню
-│       │   ├── menu_auth.html
-│       │   └── menu_top.html
-│       ├── camera_view.html
-│       ├── control.html
-│       ├── head.html
-│       ├── index.html
-│       └── login.html
+│   ├── templates/                          # HTML шаблоны
+│   │   ├── menu/                           # Шаблоны меню
+│   │   │   ├── menu_auth.html
+│   │   │   └── menu_top.html
+│   │   ├── camera_view.html
+│   │   ├── control.html
+│   │   ├── head.html
+│   │   ├── index.html
+│   │   └── login.html
+│   │
+│   └── utils/ 
+│        ├── common.py                  # Общие утилиты и хелперы
+│        ├── hash_utils.py              # Хеширование паролей
+│        └── jwt_utils.py               # JWT токены и авторизация
 │
 ├── .dockerignore                       # Docker игнорирование
 ├── .env                                # Переменные окружения

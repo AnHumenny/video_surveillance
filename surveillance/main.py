@@ -4,7 +4,6 @@ import subprocess
 
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
-import hashlib
 import json
 import re
 import cv2
@@ -13,15 +12,18 @@ import asyncio
 from quart import (Quart, request, jsonify, render_template, make_response, Response, redirect, url_for, session, flash,
                    get_flashed_messages, send_file)
 import signal
-from functools import wraps
 import jwt
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from dotenv import load_dotenv
 
 from celery_task import tasks
 from surveillance.schemas.repository import Cameras, User
 from surveillance.camera_manager import CameraManager
 from logs.logging_config import get_logger
+from surveillance.utils.common import mask_rtsp_credentials, check_rtsp, PASSWORD_PATTERN
+from surveillance.utils.hash_utils import hash_password
+from surveillance.utils.jwt_utils import token_required_camera, token_required, create_token
+
 logger = get_logger()
 
 
@@ -36,6 +38,7 @@ app.secret_key = os.urandom(24)
 
 app.template_folder = "templates"
 camera_manager: CameraManager = CameraManager()
+
 
 @app.before_serving
 async def setup_camera_manager():
@@ -68,59 +71,13 @@ async def generate_frames(cap):
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
             await asyncio.sleep(0.03)
 
-        except Exception as err:
+        except (cv2.error, RuntimeError) as error:
+            logger.error(f"OpenCV error: {error}")
             break
 
-
-def hash_password(password: str) -> str:
-    """hashing password."""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
-def token_required(f):
-    """checking the token by validation (admin(control panel))"""
-    @wraps(f)
-    async def decorated(*args, **kwargs):
-        token = request.cookies.get('token')
-        if not token:
-            return jsonify({"message": "No token"}), 401
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            if data['status'] != 'admin':
-                return jsonify({"message": "Insufficient rights"}), 403
-        except jwt.ExpiredSignatureError:
-            return jsonify({"message": "Token has expired"}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"message": "Invalid token"}), 401
-        return await f(*args, **kwargs)
-    return decorated
-
-
-def token_required_camera(f):
-    """checking the token by validation (admin, user(cameras))"""
-    @wraps(f)
-    async def decorated(*args, **kwargs):
-        token = request.cookies.get('token')
-        if not token:
-            return jsonify({"message": "No token"}), 401
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            if data['status'] not in ['admin', 'user']:
-                return jsonify({"message": "Insufficient rights"}), 403
-        except jwt.ExpiredSignatureError:
-            return jsonify({"message": "Token has expired"}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"message": "Invalid token"}), 401
-        return await f(*args, **kwargs)
-    return decorated
-
-
-async def check_rtsp(path_to_cam):
-    """checking camera on rtsp."""
-    q = path_to_cam[0:4]
-    if q != "rtsp":
-        return False
-    return True
+        except Exception as er:
+            logger.error(f"Unexpected error in stream: {er}")
+            break
 
 
 @app.route('/video/<cam_id>')
@@ -258,10 +215,6 @@ async def scan_network_for_rtsp():
     return jsonify(rtsp_devices)
 
 
-def mask_rtsp_credentials(url: str) -> str:
-    return re.sub(r'//(.*?):(.*?)@', r'//****:****@', url)
-
-
 @app.route('/control')
 @token_required
 async def control():
@@ -276,14 +229,6 @@ async def control():
     return await render_template('control.html', all_cameras=all_cameras, all_users=all_users,
                                  host=user_host, port=user_port, messages=messages, status='admin',
                                  current_range=current_range, masked_urls=masked_urls)
-
-
-async def list_all_cameras():
-    """list of all cameras."""
-    q = await Cameras.select_all_cam()
-    if not q:
-        return {"message": "Камер не найдено!"}
-    return await render_template('control.html', status='admin')
 
 
 @app.route('/delete_camera/<int:ssid>', methods=['GET', 'POST'])
@@ -338,14 +283,6 @@ async def add_new_camera():
     await flash("Camera added successfully!", "camera_success")
     return redirect(url_for("control"))
 
-
-async def select_all_users():
-    """list of all users"""
-    q = User.select_all_users()
-    return q
-
-
-PASSWORD_PATTERN = r"^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=\S+$).{8,20}$"
 
 @app.route('/add_user', methods=['POST', 'GET'])
 @token_required
@@ -432,15 +369,7 @@ async def login():
     if user:
         status = user.status  # type: ignore
 
-        token = jwt.encode(
-            {
-                'username': username,
-                'status': status,
-                'exp': datetime.now(timezone.utc) + timedelta(hours=int(os.getenv("TOKEN_TIME_AUTHORIZATION")))
-            },
-            app.config['SECRET_KEY'],
-            algorithm='HS256'
-        )
+        token = create_token(username, status)
 
         rendered = await render_template(
             "index.html",
