@@ -102,11 +102,10 @@ video_surveillance/
 │   ├── recordings                        # Записи видео
 │   │   └── YYYY-MM-DD
 │   │       └── (cam_1(2,3,etc)
-│   └── screenshots/                        # Скриншоты
-│   
-├── screenshots/      
-│   └── current/                        # Текущие скриншоты
-│
+│   └── current/
+│         ├── movie/
+│         └── screenshots/
+│ 
 ├── surveillance/                       # Основной проект
 │   ├── __init__.py
 │   ├── camera_manager.py

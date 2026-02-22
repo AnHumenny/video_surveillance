@@ -446,7 +446,7 @@ async def take_screenshot(cam_id):
     timestamp = datetime.now()
     filename = f"camera_{cam_id}_{timestamp.strftime('%Y%m%d_%H%M%S')}.jpg"
     date_str = timestamp.strftime('%Y-%m-%d')
-    folder = os.path.join("screenshots", "current", f"camera {cam_id}", date_str)
+    folder = os.path.join("media", "current", "screenshots", f"camera {cam_id}", date_str)
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, filename)
     cv2.imwrite(path, frame)
