@@ -1,28 +1,25 @@
 import asyncio
-import datetime
-import hashlib
-import logging
-from functools import wraps
 from typing import Dict, Callable
 
 from aiogram import Bot, Dispatcher, types, F
 import os
-import jwt
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.filters import Command, StateFilter
 from aiogram.types import InlineKeyboardMarkup, WebAppInfo, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.utils.jwt_utils import create_jwt_token, token_required
 from surveillance.main import force_start_cam
 
-from bot import lists
+from bot.utils import lists
 from surveillance.schemas.repository import  Userbot, Cameras
 from dotenv import load_dotenv
 
+from surveillance.utils.hash_utils import hash_password
+
 API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
-logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
@@ -40,55 +37,6 @@ class Form(StatesGroup):
 class Info:
     """Variables for throwing"""
     count = 0
-
-
-async def create_jwt_token(data):
-    """Create token"""
-    token = jwt.encode({
-        **data,
-        'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
-    }, os.getenv("SECRET_KEY"), algorithm='HS256')
-    return token
-
-
-async def decode_jwt_token(token):
-    """Decode token"""
-    try:
-        decoded_data = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=['HS256'])
-        return decoded_data
-    except jwt.ExpiredSignatureError:
-        print("Token has expired.")
-        return None
-    except jwt.InvalidTokenError:
-        print("Invalid token.")
-        return None
-
-
-def token_required(func):
-    """Check token in status admin"""
-    @wraps(func)
-    async def wrapper(message: types.Message, state: FSMContext, *args, **kwargs):
-        data = await state.get_data()
-        token = data.get("jwt_token")
-        status = data.get("status")
-        if not token:
-            await message.answer("Нет сохранённого токена. Пройдите авторизацию через /start.")
-            return None
-        if status != "admin":
-            await message.answer("Недостаточно прав доступа.")
-            return None
-        decoded_data = await decode_jwt_token(token)
-        if decoded_data:
-            return await func(message, state=state, *args, **kwargs)
-        else:
-            await message.answer("Токен недействителен или истёк. Авторизуйтесь снова.")
-            return None
-    return wrapper
-
-
-def hash_password(password: str) -> str:
-    """hashing password."""
-    return hashlib.sha256(password.encode()).hexdigest()
 
 
 async def create_password_keyboard() -> InlineKeyboardMarkup:
@@ -473,7 +421,6 @@ async def action_cam(callback: types.CallbackQuery, state: FSMContext):
     except ValueError as e:
         await callback.message.answer(f"Ошибка: {str(e)}")
     except Exception as e:
-        logging.error(f"Unexpected error in {action} for camera {cam_id}: {str(e)}")
         await callback.message.answer("Произошла непредвиденная ошибка.")
 
 @dp.message(Command("exit"))

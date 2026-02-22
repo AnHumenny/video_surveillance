@@ -12,7 +12,6 @@ from surveillance.schemas.repository import Cameras
 from logs.logging_config import get_logger
 logger = get_logger()
 
-
 class CameraManager:
     """Asynchronous manager that maintains exactly **one** VideoCapture per physical
     camera, runs a background reader task for each camera, and exposes the most
@@ -63,6 +62,7 @@ class CameraManager:
         tasks = [self._start_camera_reader(cam_id, url, timeout_per_camera)
                  for cam_id, url in self.camera_configs.items()]
         await asyncio.gather(*tasks)
+
 
     async def load_camera_configs(self) -> bool:
         """Reload camera configs from DB, start new readers and stop removed ones.
@@ -116,6 +116,7 @@ class CameraManager:
             return frame
         except asyncio.TimeoutError:
             return None
+
 
     async def get_frame_with_motion_detection(
             self,
@@ -298,6 +299,7 @@ class CameraManager:
         os.makedirs(save_path, exist_ok=True)
         return os.path.join(save_path, filename)
 
+
     async def record_video(self, cam_id: str, full_path: str, duration_sec: int = 5) -> Optional[str]:
         cam_data = self.cameras.get(cam_id)
         if not cam_data:
@@ -403,7 +405,7 @@ class CameraManager:
 
         Args:
             cam_id (str): Camera ID.
-             url (str): Stream URL.
+            url (str): Stream URL.
             timeout (int): Timeout in seconds.
 
             Returns:
@@ -415,6 +417,7 @@ class CameraManager:
             return None
         except Exception as e:
             return None
+
 
     async def _create_capture(self, cam_id: str, url: str):
         """Create cv2.VideoCapture in thread executor.
@@ -438,6 +441,7 @@ class CameraManager:
             logger.error(f"[ERROR] cv2.VideoCapture failed for {cam_id}")
         return cap
 
+
     async def get_current_frame(self, cam_id):
         """make current screenshot"""
         cam_data = self.cameras.get(cam_id)
@@ -449,38 +453,95 @@ class CameraManager:
                 return frame if ret else None
         return None
 
+
     async def start_continuous_recording(self, cam_id: str):
         """Starts continuous video recording for 30 seconds until stop command."""
         if self.recording_flags.get(cam_id):
-            return
+            return None
 
         self.recording_flags[cam_id] = True
 
+        cam_data = self.cameras.get(cam_id)
+        if not cam_data:
+            return None
 
-        async def record_loop():
-            """Continuous loop of 30s video recordings while flag is True."""
-            while self.recording_flags.get(cam_id, False):
-                full_path = self.generate_video_path(cam_id)
+        queue: asyncio.Queue = cam_data["queue"]
 
-                cam_entry = self.cameras.get(cam_id)
-                if cam_entry and 'current_frame' in cam_entry:
-                    frame = cam_entry['current_frame']
-                    if frame is not None:
-                        cv2.putText(frame, "REC", (10, 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+        try:
+            frame = await asyncio.wait_for(queue.get(), timeout=5)
+        except asyncio.TimeoutError:
+            self.recording_flags[cam_id] = False
+            return None
 
-                try:
-                    await self.record_video(cam_id, full_path, duration_sec=30)
-                except asyncio.CancelledError:
-                    logger.info(f"[INFO] Recording cancelled for {cam_id}")
-                    break
-                except Exception as e:
-                    logger.error(f"[ERROR] Failed to record video for {cam_id}: {e}")
-                    await asyncio.sleep(5)
+        height, width = frame.shape[:2]
+        fourcc = cv2.VideoWriter.fourcc(*'mp4v')
 
-            logger.info(f"[INFO] Recording loop exited for {cam_id}")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"cam_{cam_id}_{timestamp}.mp4"
+        full_path = os.path.join("media", "current", "movie", filename)
 
-        task = asyncio.create_task(record_loop(), name=f"recording-{cam_id}")
+        out = cv2.VideoWriter(full_path, fourcc, self.fps, (width, height))
+        loop = asyncio.get_running_loop()
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        text = "REC"
+        font_scale = 1.0
+        thickness = 2
+        color = (0, 0, 255)
+
+        text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+        text_x = 10
+        text_y = 30 + text_size[1]
+
+        circle_center = (text_x - 15, text_y - 10)
+        circle_radius = 5
+
+        frame_with_text = frame.copy()
+        cv2.circle(frame_with_text, circle_center, circle_radius, (0, 0, 255), -1)
+        cv2.putText(frame_with_text, text, (text_x, text_y), font, font_scale, color, thickness)
+        await loop.run_in_executor(self.executor, out.write, frame_with_text)
+
+        while self.recording_flags.get(cam_id):
+            try:
+                frame = await asyncio.wait_for(queue.get(), timeout=2)
+
+                frame_with_text = frame.copy()
+                cv2.circle(frame_with_text, circle_center, circle_radius, (0, 0, 255), -1)
+                cv2.putText(frame_with_text, text, (text_x, text_y), font, font_scale, color, thickness)
+
+                await loop.run_in_executor(self.executor, out.write, frame_with_text)
+            except asyncio.TimeoutError:
+                continue
+
+        await loop.run_in_executor(self.executor, out.release)
+
+        return full_path
+
+
+    async def record_loop(self, cam_id: str):
+        """Continuous loop of 30s video recordings while flag is True."""
+        while self.recording_flags.get(cam_id, False):
+            full_path = self.generate_video_path(cam_id)
+
+            cam_entry = self.cameras.get(cam_id)
+            if cam_entry and 'current_frame' in cam_entry:
+                frame = cam_entry['current_frame']
+                if frame is not None:
+                    cv2.putText(frame, "REC", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+
+            try:
+                await self.record_video(cam_id, full_path, duration_sec=30)
+            except asyncio.CancelledError:
+                logger.info(f"[INFO] Recording cancelled for {cam_id}")
+                break
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to record video for {cam_id}: {e}")
+                await asyncio.sleep(5)
+
+        logger.info(f"[INFO] Recording loop exited for {cam_id}")
+
+        task = asyncio.create_task(self.record_loop(cam_id), name=f"recording-{cam_id}")
         self.recording_tasks[cam_id] = task
 
 
@@ -538,6 +599,7 @@ class CameraManager:
 
         await self._start_camera_reader(cam_id, self.camera_configs[cam_id], timeout=5)
         return True
+
 
     async def _try_reconnect(self, cam_id: str, attempts: int = 3, delay: float = 2.0) -> bool:
         """Attempt to reconnect to a camera up to `attempts` times.
