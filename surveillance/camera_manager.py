@@ -1,5 +1,6 @@
 import json
 import asyncio
+import multiprocessing
 import os
 from collections import defaultdict
 from datetime import datetime
@@ -40,8 +41,11 @@ class CameraManager:
         except json.JSONDecodeError as e:
             raise ValueError(f"Error parsing camera configuration: {e}")
 
-        for cam_id, url in self.camera_configs.items():
-            logger.info(f"  Camera {cam_id}: {url}")
+        if multiprocessing.current_process().name == 'MainProcess':
+            for cam_id, url in self.camera_configs.items():
+                logger.info(f"  Camera {cam_id}: {url}")
+        else:
+            logger.debug(f"CameraManager initialized in {multiprocessing.current_process().name}")
 
         self.fps = fps
         self.frame_period = 1.0 / fps
@@ -216,7 +220,7 @@ class CameraManager:
                                     if os.path.exists(filename):
                                         screenshot_path = filename
                                         self.last_screenshot_times[cam_id] = now
-                                except Exception:
+                                except cv2.error:
                                     pass
 
                             if send_video_tg and not self.recording_flags.get(cam_id, False):
@@ -235,7 +239,7 @@ class CameraManager:
                         if now - data["last_seen"] < 2
                     }
 
-                except Exception:
+                except cv2.error:
                     pass
 
             if show_zone and points and len(points) > 0:
@@ -252,7 +256,7 @@ class CameraManager:
                     cv2.putText(processed, counter_text,
                                 (points[0][0], 30), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.9, (0, 0, 255), 1)
-                except Exception:
+                except cv2.error:
                     pass
 
             if self.recording_flags.get(cam_id):
@@ -278,7 +282,7 @@ class CameraManager:
             async def record_and_reset():
                 try:
                     await self.record_video(cam_id, video_path, duration_sec=int(os.getenv("BOT_SEND_VIDEO", 5)))
-                except Exception:
+                except cv2.error:
                     pass
                 finally:
                     self.recording_flags[cam_id] = False
@@ -399,7 +403,6 @@ class CameraManager:
                 logger.error(f"[ERROR] Error releasing VideoCapture for {cam_id}: {e}", exc_info=True)
         self.cameras.pop(cam_id, None)
 
-
     async def _safe_create_capture_with_timeout(self, cam_id: str, url: str, timeout: int):
         """Create cv2.VideoCapture with timeout and error handling.
 
@@ -408,14 +411,14 @@ class CameraManager:
             url (str): Stream URL.
             timeout (int): Timeout in seconds.
 
-            Returns:
+        Returns:
             Optional[cv2.VideoCapture]: Opened capture or None.
         """
         try:
             return await asyncio.wait_for(self._create_capture(cam_id, url), timeout=timeout)
         except asyncio.TimeoutError:
             return None
-        except Exception as e:
+        except cv2.error:
             return None
 
 
@@ -486,7 +489,7 @@ class CameraManager:
         font = cv2.FONT_HERSHEY_SIMPLEX
         text = "REC"
         font_scale = 1.0
-        thickness = 2
+        thickness = 3
         color = (0, 0, 255)
 
         text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]

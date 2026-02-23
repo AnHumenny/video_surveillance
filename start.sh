@@ -22,7 +22,7 @@ export PYTHONPATH
 mkdir -p logs
 
 echo "[INFO] Checking existing processes..."
-pgrep aux | grep -E 'python3|celery|bot.app|ffmpeg' | grep -v grep || true
+pgrep aux | grep -E 'python3|celery|hypercorn|ffmpeg' | grep -v grep || true
 
 echo "[INFO] Checking port..."
 lsof -i :"$PORT" || true
@@ -34,7 +34,7 @@ celery -A celery_task inspect active || true
 echo "[INFO] Killing old processes if they exist..."
 pkill -f "celery -A celery_task worker" || true
 pkill -f "celery -A celery_task beat" || true
-pkill -f "python3 -m bot.app" || true
+pkill -f "hypercorn" || true
 pkill -f "python3 -m surveillance.main" || true
 pkill -f "ffmpeg" || true
 sleep 2
@@ -43,8 +43,8 @@ LOG_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 CELERY_WORKER_LOGFILE="logs/celery_worker_${LOG_TIMESTAMP}.log"
 CELERY_BEAT_LOGFILE="logs/celery_beat_${LOG_TIMESTAMP}.log"
 
-echo "[INFO] Starting surveillance/main.py..."
-python3 -m surveillance.main &
+echo "[INFO] Starting surveillance with Hypercorn on port $PORT..."
+hypercorn surveillance.main:app --bind 0.0.0.0:"$PORT" &
 echo "$!" > main.pid
 
 echo "[INFO] Starting bot.app..."
@@ -81,7 +81,7 @@ echo "$!" > "$LOG_DIR/celery_beat.pid"
 
 echo "[INFO] All processes started. Check logs/start.log and celery logs for details."
 echo "[INFO] Processes:"
-echo "  Main: $(cat main.pid)"
+echo "  Surveillance (Hypercorn): $(cat main.pid)"
 echo "  Bot: $(cat bot.pid)"
 echo "  Celery Worker: $(cat "$LOG_DIR/celery_worker.pid")"
 echo "  Celery Beat: $(cat "$LOG_DIR/celery_beat.pid")"

@@ -26,6 +26,7 @@ from surveillance.utils.jwt_utils import token_required_camera, token_required, 
 
 logger = get_logger()
 
+logger.info(f"MAIN MODULE LOADED - PID: {os.getpid()} - PROCESS: {os.getpid()}")
 
 load_dotenv()
 script_dir = os.path.dirname(os.path.abspath(__file__))

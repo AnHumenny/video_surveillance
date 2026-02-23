@@ -73,78 +73,79 @@ chmod +x start.sh
 
 - Celery worker (celery_app.celery)
 
-```
 ### Структура проекта
 ```
 video_surveillance/
-├── .venv/                              # Виртуальное окружение Python
-├── bot/                                # Telegram-бот
-│   ├── __init__.py
-│   ├── app.py
-│   └── utils/
-│       ├── jwt_utils.py                # JWT токены и авторизация
-│       └── lists.py                    
+├── .venv/ # Виртуальное окружение Python
+├── bot/ # Telegram-бот
+│ ├── init.py
+│ ├── app.py
+│ └── utils/
+│ ├── jwt_utils.py # JWT токены и авторизация
+│ └── lists.py
 │
-├── celery_task/                        # Celery задачи
-│   ├── __init__.py
-│   ├── celery_app.py
-│   └── tasks.py
+├── celery_task/ # Celery задачи
+│ ├── init.py
+│ ├── celery_app.py
+│ └── tasks.py
 │
-├── config/                             # Конфигурация
-│   ├── __init__.py
-│   └── config.py
+├── config/ # Конфигурация
+│ ├── init.py
+│ └── config.py
 │
-├── logs/                               
-│   ├── YYYY-MM-DD/*                    # Логи приложения
-│   └── logging_config.py
-│    
-├── media/                              # Медиафайлы
-│   ├── recordings                        # Записи видео
-│   │   └── YYYY-MM-DD
-│   │       └── (cam_1(2,3,etc)
-│   └── current/
-│         ├── movie/
-│         └── screenshots/
-│ 
-├── surveillance/                       # Основной проект
-│   ├── __init__.py
-│   ├── camera_manager.py
-│   ├── main.py
-│   │ 
-│   ├── schemas/                            # Схемы и модели БД
-│   │   ├── __init__.py
-│   │   ├── database.py
-│   │   └── repository.py
-│   │ 
-│   ├── static/                             # Статические файлы
-│   │   ├── image/                          # Изображения интерфейса
-│   │   └── style/                          # Стили CSS
-│   │   
-│   ├── templates/                          # HTML шаблоны
-│   │   ├── menu/                           # Шаблоны меню
-│   │   │   ├── menu_auth.html
-│   │   │   └── menu_top.html
-│   │   ├── camera_view.html
-│   │   ├── control.html
-│   │   ├── head.html
-│   │   ├── index.html
-│   │   └── login.html
-│   │
-│   └── utils/ 
-│        ├── common.py                  # Общие утилиты и хелперы
-│        ├── hash_utils.py              # Хеширование паролей
-│        └── jwt_utils.py               # JWT токены и авторизация
+├── logs/
+│ ├── YYYY-MM-DD/ # Логи приложения
+│ └── logging_config.py
 │
-├── .dockerignore                       # Docker игнорирование
-├── .env                                # Переменные окружения
-├── .gitignore                          # Git игнорирование
-├── db_camera.db                        # База данных SQLite
-├── Dockerfile                          # Docker конфигурация
-├── env_example.txt                     # Пример .env файла
-├── README.md                           # Документация проекта
-├── requirements.txt                    # Зависимости Python
-├── start.sh                            # Скрипт запуска
-└── stop.sh                             # Скрипт остановки
+├── media/ # Медиафайлы
+│ ├── recordings/ # Записи видео
+│ │ └── YYYY-MM-DD/
+│ │ ├── cam_1/
+│ │ ├── cam_2/
+│ │ └── cam_3/
+│ └── current/
+│ ├── movie/
+│ └── screenshots/
+│
+├── surveillance/ # Основной проект
+│ ├── init.py
+│ ├── camera_manager.py
+│ ├── main.py
+│ │
+│ ├── schemas/ # Схемы и модели БД
+│ │ ├── init.py
+│ │ ├── database.py
+│ │ └── repository.py
+│ │
+│ ├── static/ # Статические файлы
+│ │ ├── image/ # Изображения интерфейса
+│ │ └── style/ # Стили CSS
+│ │
+│ ├── templates/ # HTML шаблоны
+│ │ ├── menu/ # Шаблоны меню
+│ │ │ ├── menu_auth.html
+│ │ │ └── menu_top.html
+│ │ ├── camera_view.html
+│ │ ├── control.html
+│ │ ├── head.html
+│ │ ├── index.html
+│ │ └── login.html
+│ │
+│ └── utils/
+│ ├── common.py # Общие утилиты и хелперы
+│ ├── hash_utils.py # Хеширование паролей
+│ └── jwt_utils.py # JWT токены и авторизация
+│
+├── .dockerignore # Docker игнорирование
+├── .env # Переменные окружения
+├── .gitignore # Git игнорирование
+├── db_camera.db # База данных SQLite
+├── Dockerfile # Docker конфигурация
+├── env_example.txt # Пример .env файла
+├── README.md # Документация проекта
+├── requirements.txt # Зависимости Python
+├── start.sh # Скрипт запуска
+└── stop.sh # Скрипт остановки
 ```
 
 #### Видео демонстрация
