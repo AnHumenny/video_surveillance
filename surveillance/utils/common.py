@@ -1,18 +1,6 @@
-import re
 from quart import render_template
+from surveillance.main import camera_manager
 from surveillance.schemas.repository import Cameras, User
-
-
-def mask_rtsp_credentials(url: str) -> str:
-    return re.sub(r'//(.*?):(.*?)@', r'//****:****@', url)
-
-
-async def check_rtsp(path_to_cam):
-    """checking camera on rtsp."""
-    q = path_to_cam[0:4]
-    if q != "rtsp":
-        return False
-    return True
 
 
 async def list_all_cameras():
@@ -29,4 +17,6 @@ async def select_all_users():
     return q
 
 
-PASSWORD_PATTERN = r"^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&+=])(?=\S+$).{8,20}$"
+async def force_start_cam(cam_id):
+    """Forcing the camera to start(bot)"""
+    await camera_manager.reinitialize_camera(cam_id)

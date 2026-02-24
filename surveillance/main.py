@@ -20,7 +20,7 @@ from celery_task import tasks
 from surveillance.schemas.repository import Cameras, User
 from surveillance.camera_manager import CameraManager
 from logs.logging_config import get_logger
-from surveillance.utils.common import mask_rtsp_credentials, check_rtsp, PASSWORD_PATTERN
+from surveillance.utils.rtsp_utils import mask_rtsp_credentials, check_rtsp, PASSWORD_PATTERN
 from surveillance.utils.hash_utils import hash_password
 from surveillance.utils.jwt_utils import token_required_camera, token_required, create_token
 
@@ -45,40 +45,9 @@ camera_manager: CameraManager = CameraManager()
 async def setup_camera_manager():
     global camera_manager
     camera_manager = CameraManager()
-    if not CameraManager():
+    if not camera_manager:
         return
     await camera_manager.initialize()
-
-
-async def generate_frames(cap):
-    """frame streaming generator"""
-    while True:
-        try:
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                break
-            size_video = os.getenv("SIZE_VIDEO")
-            if size_video:
-                width, height = map(int, size_video.split(","))
-            else:
-                width, height = 1280, 720
-            frame = cv2.resize(frame, (width, height))
-            ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-            if not ret:
-                continue
-
-            frame_data = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
-            await asyncio.sleep(0.03)
-
-        except (cv2.error, RuntimeError) as error:
-            logger.error(f"OpenCV error: {error}")
-            break
-
-        except Exception as er:
-            logger.error(f"Unexpected error in stream: {er}")
-            break
 
 
 @app.route('/video/<cam_id>')
@@ -422,6 +391,7 @@ async def reload_cameras():
             status=500
         )
 
+
 @app.route('/reinitialize/<cam_id>', methods=['POST'])
 async def reinitialize_camera(cam_id):
     """Forced camera reinitialization"""
@@ -525,29 +495,25 @@ async def stop_recording_loop(cam_id):
     return jsonify({"status": "recording_stopped"})
 
 
-async def force_start_cam(cam_id):
-    """Forcing the camera to start(bot)"""
-    await camera_manager.reinitialize_camera(cam_id)
 
-
-@token_required
 @app.route("/force_stop_cam/<cam_id>", methods=["GET"])
+@token_required
 async def force_stop_cam(cam_id):
     """Forcing the camera to stop"""
     asyncio.create_task(camera_manager._stop_camera_reader(cam_id))
     return redirect(url_for('control'))
 
 
-@token_required
 @app.route("/stop_all_cam")
+@token_required
 async def stop_all_cam():
     """Forcing all_cameras to stop"""
     await cleanup()
     return {"status": "all cameras stopped"}
 
 
-@token_required
 @app.route("/health_server", methods=["POST"])
+@token_required
 async def health_server():
     if request.content_type == 'application/json':
         data = await request.get_json()
@@ -558,8 +524,8 @@ async def health_server():
     return jsonify({"task_id": health.id}, "success")
 
 
-@token_required_camera
 @app.route('/logout')
+@token_required_camera
 async def logout():
     """exit."""
     resp = redirect(url_for('login'))
@@ -568,9 +534,10 @@ async def logout():
     session.pop('token', None)
     return resp
 
+
 shutdown_event = asyncio.Event()
 
-def handle_shutdown():
+async def handle_shutdown():
     """signal handler for application shutdown."""
     shutdown_event.set()
 
