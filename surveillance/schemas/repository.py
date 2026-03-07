@@ -4,7 +4,7 @@ import json
 from typing import Any
 from sqlalchemy import select, insert, delete, and_, update, Select
 from sqlalchemy.exc import NoResultFound, IntegrityError, SQLAlchemyError
-from surveillance.schemas.database import DCamera, DUser, DFindCamera
+from surveillance.schemas.database import DCamera, DUser, DFindCamera, DOperationOldFiles
 import os
 import re
 import asyncio
@@ -736,3 +736,32 @@ class TaskCelery:
             q = select(DCamera.id)
             result = await session.execute(q)
             return result.scalars().all()
+
+
+class OldFiles:
+
+    @classmethod
+    async def select_status_old_video(cls):
+        """Select status for checkbox old video files.
+
+            Returns:
+                bool: True if enabled, False otherwise
+            """
+
+        async with new_session() as session:
+            q = select(DOperationOldFiles.weekly_recordings_cleanup)
+            result = await session.execute(q)
+            return result.scalar()
+
+    @classmethod
+    async def select_status_old_logs(cls):
+        """Select status for checkbox old logs.
+
+            Returns:
+                bool: True if enabled, False otherwise
+            """
+
+        async with new_session() as session:
+            q = select(DOperationOldFiles.old_logs_cleanup)
+            result = await session.execute(q)
+            return result.scalar()

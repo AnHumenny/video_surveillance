@@ -243,6 +243,34 @@ async function sendToAddCamera(address) {
                         </div>
                     {% endfor %}
                 </div>
+
+                <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px;">
+                    <h4 style="margin-top: 0; margin-bottom: 15px; color: #495057;">Настройки очистки</h4>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox"
+                                   name="weekly_recordings_cleanup"
+                                   id="weekly_recordings_cleanup"
+                                   value="1"
+                                   {% if old_files_weekly %}checked{% endif %}> <!-- в post -->
+                            <label for="weekly_recordings_cleanup" style="font-weight: 500; cursor: pointer;">
+                                Еженедельная очистка видео
+                            </label>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox"
+                                   name="old_logs_cleanup"
+                                   id="old_logs_cleanup"
+                                   value="1"
+                                   {% if old_files_logs %}checked{% endif %}>  <!-- в post -->
+                            <label for="old_logs_cleanup" style="font-weight: 500; cursor: pointer;">
+                                Еженедельная очистка старых логов
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     {% endif %}
@@ -303,7 +331,6 @@ async function sendToAddCamera(address) {
 </div>
 
 <script>
-
 const imgEdit = document.getElementById("snapshot_edit");
 const canvasEdit = document.getElementById("overlay_edit");
 const ctxEdit = canvasEdit.getContext("2d");

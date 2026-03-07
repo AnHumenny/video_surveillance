@@ -10,10 +10,21 @@ class Model(DeclarativeBase):
 class DCamera(Model):
     """Represents a camera in the database.
 
-        Attributes:
-            path_to_cam (str): path to camera ().
-
-        """
+    Attributes:
+        path_to_cam (str): path to camera.
+        status_cam (bool): camera status (online/offline)
+        visible_cam (bool): camera visibility in interface
+        screen_cam (bool): screen capture enabled
+        send_email (bool): send alerts via email
+        send_tg (bool): send alerts via Telegram
+        send_video_tg (bool): send video via Telegram
+        coordinate_x1 (str): first X coordinate for detection zone
+        coordinate_x2 (str): second X coordinate for detection zone
+        coordinate_y1 (str): first Y coordinate for detection zone
+        coordinate_y2 (str): second Y coordinate for detection zone
+        weekly_recordings_cleanup (bool): automatic weekly cleanup of recordings
+        old_logs_cleanup (bool): automatic cleanup of old logs
+    """
     __tablename__ = "_camera"
     path_to_cam = Column(String(200), unique=True)
     status_cam = Column(Boolean, nullable=False)
@@ -58,3 +69,16 @@ class DFindCamera(Model):
     __tablename__ = "_find_camera"
     cam_host = Column(String(200))
     subnet_mask = Column(String(10))
+
+
+class DOperationOldFiles(Model):
+    """Represents a camera in the database.
+
+        Attributes:
+            weekly_recordings_cleanup (bool): automatic weekly cleanup of recordings
+            old_logs_cleanup (bool): automatic cleanup of old logs
+        """
+
+    __tablename__ = "_old_files"
+    weekly_recordings_cleanup = Column(Boolean, nullable=False, default=False)
+    old_logs_cleanup = Column(Boolean, nullable=False, default=False)
