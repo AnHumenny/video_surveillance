@@ -304,6 +304,28 @@ async def edit_cam():
     return redirect(url_for("control"))
 
 
+@app.route('/celery_old_video', methods=['POST'])
+@token_required
+async def celery_old_video():
+    """editing status celery task."""
+    form_data = await request.form
+    old_video = form_data.get("weekly_recordings_cleanup")
+
+    await OldFiles.celery_old_video(old_video)
+    return redirect(url_for("control"))
+
+
+@app.route('/celery_old_logs_cleanup', methods=['POST'])
+@token_required
+async def celery_old_logs_cleanup():
+    """editing status celery task."""
+    form_data = await request.form
+    old_logs = form_data.get("old_logs_cleanup")
+
+    await OldFiles.celery_old_logs(old_logs)
+    return redirect(url_for("control"))
+
+
 @app.route('/', methods=['GET'])
 async def index():
     """main page with camera selection."""

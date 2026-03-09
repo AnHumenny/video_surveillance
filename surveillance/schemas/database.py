@@ -22,8 +22,6 @@ class DCamera(Model):
         coordinate_x2 (str): second X coordinate for detection zone
         coordinate_y1 (str): first Y coordinate for detection zone
         coordinate_y2 (str): second Y coordinate for detection zone
-        weekly_recordings_cleanup (bool): automatic weekly cleanup of recordings
-        old_logs_cleanup (bool): automatic cleanup of old logs
     """
     __tablename__ = "_camera"
     path_to_cam = Column(String(200), unique=True)

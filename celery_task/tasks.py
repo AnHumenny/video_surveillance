@@ -1,11 +1,14 @@
+import os
+import sys
 from celery_task.celery_app import celery
 from celery_task.cleanup_service import delete_old_folders, delete_old_log_files
 from celery_task.messages_utils import send_health_email, send_screenshot, send_telegram_photo_service, \
     send_telegram_video_service
-from surveillance.schemas.repository import TaskCelery
+from celery_task.path_utils import run_async_task
+from surveillance.schemas.repository import OldFiles
 from dotenv import load_dotenv
 import logging
-
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logger = logging.getLogger(__name__)
 
 load_dotenv()
@@ -38,14 +41,28 @@ def send_telegram_video(cam_id: str, video_path: str, chat_id: int) -> str:
 
 
 @celery.task
-def video_cleanup_weekly():                  # добавить в интерфейс админки
+def video_cleanup_weekly():
     """Celery task for performing weekly cleanup of old recordings."""
-    # bool да/нет из админки
+
+    cleanup_enabled = run_async_task(OldFiles.select_status_old_video())
+
+    if not cleanup_enabled:
+        logger.info("Weekly video cleanup is disabled")
+        return {'success': True, 'skipped': True, 'reason': 'disabled'}
+
+    logger.info("Weekly video cleanup started")
     return delete_old_folders()
 
 
 @celery.task
-def delete_logs_weekly():             # добавить в интерфейс админки
-    """Celery task for performing weekly cleanup of old logs. """
-    # bool да/нет из админки
-    delete_old_log_files()
+def delete_logs_weekly():
+    """Celery task for performing weekly cleanup of old logs."""
+
+    logs_enabled = run_async_task(OldFiles.select_status_old_logs())
+
+    if not logs_enabled:
+        logger.info("Weekly logs cleanup is disabled")
+        return {'success': True, 'skipped': True, 'reason': 'disabled'}
+
+    logger.info("Weekly logs cleanup started")
+    return delete_old_log_files()

@@ -243,31 +243,38 @@ async function sendToAddCamera(address) {
                         </div>
                     {% endfor %}
                 </div>
-
                 <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px;">
-                    <h4 style="margin-top: 0; margin-bottom: 15px; color: #495057;">Настройки очистки</h4>
-                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox"
-                                   name="weekly_recordings_cleanup"
-                                   id="weekly_recordings_cleanup"
-                                   value="1"
-                                   {% if old_files_weekly %}checked{% endif %}> <!-- в post -->
-                            <label for="weekly_recordings_cleanup" style="font-weight: 500; cursor: pointer;">
-                                Еженедельная очистка видео
-                            </label>
-                        </div>
+                    <h4 style="margin-top: 0; margin-bottom: 15px; color: #495057;">Настройки очистки старых файлов</h4>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
 
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox"
-                                   name="old_logs_cleanup"
-                                   id="old_logs_cleanup"
-                                   value="1"
-                                   {% if old_files_logs %}checked{% endif %}>  <!-- в post -->
-                            <label for="old_logs_cleanup" style="font-weight: 500; cursor: pointer;">
-                                Еженедельная очистка старых логов
-                            </label>
-                        </div>
+                            <form method="post" action="{{ url_for('celery_old_video') }}" enctype="multipart/form-data" style="display: flex; flex-direction: row; align-items: center; gap: 15px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox"
+                                    name="weekly_recordings_cleanup"
+                                    id="weekly_recordings_cleanup"
+                                    value="1"
+                                    {% if old_files_weekly %}checked{% endif %}>
+                                        <label for="weekly_recordings_cleanup" style="font-weight: 500; cursor: pointer;">
+                                        Еженедельная очистка старых видео
+                                        </label>
+                                    </div>
+                                <input type="submit" value="Изменить" style="padding: 5px 15px; cursor: pointer;">
+                            </form>
+
+                            <form method="post" action="{{ url_for('celery_old_logs_cleanup') }}" enctype="multipart/form-data" style="display: flex; flex-direction: row; align-items: center; gap: 15px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox"
+                                    name="old_logs_cleanup"
+                                    id="old_logs_cleanup"
+                                    value="1"
+                                    {% if old_files_logs %}checked{% endif %}>
+                                        <label for="old_logs_cleanup" style="font-weight: 500; cursor: pointer;">
+                                        Еженедельная очистка старых логов
+                                        </label>
+                                    </div>
+                                <input type="submit" value="Изменить" style="padding: 5px 15px; cursor: pointer;">
+                            </form>
+
                     </div>
                 </div>
 

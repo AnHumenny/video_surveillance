@@ -753,6 +753,7 @@ class OldFiles:
             result = await session.execute(q)
             return result.scalar()
 
+
     @classmethod
     async def select_status_old_logs(cls):
         """Select status for checkbox old logs.
@@ -765,3 +766,69 @@ class OldFiles:
             q = select(DOperationOldFiles.old_logs_cleanup)
             result = await session.execute(q)
             return result.scalar()
+
+
+    @classmethod
+    async def celery_old_video(cls, old_video):
+        """Edit status of weekly_recordings_cleanup.
+
+        Args:
+            cls: Class reference (unused).
+            old_video: str or None - value from form ('1' or None)
+
+        Returns:
+            bool: True if successful, False if error
+        """
+
+        task = old_video == '1'
+
+        logger.info(f"Setting weekly_recordings_cleanup to: {task} (raw input: {old_video})")
+
+        async with new_session() as session:
+            try:
+
+                stmt = update(DOperationOldFiles).where(DOperationOldFiles.id == 1).values(
+                    weekly_recordings_cleanup=task)
+                await session.execute(stmt)
+                await session.commit()
+
+                logger.info(f"weekly_recordings_cleanup updated to {task}")
+                return True
+
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"[ERROR] Error updating weekly_recordings_cleanup: {e}")
+                return False
+
+
+    @classmethod
+    async def celery_old_logs(cls, old_logs):
+        """Edit status of weekly_recordings_cleanup.
+
+        Args:
+            cls: Class reference (unused).
+            old_logs: str or None - value from form ('1' or None)
+
+        Returns:
+            bool: True if successful, False if error
+        """
+
+        task = old_logs == '1'
+
+        logger.info(f"Setting weekly_recordings_cleanup to: {task} (raw input: {old_logs})")
+
+        async with new_session() as session:
+            try:
+
+                stmt = update(DOperationOldFiles).where(DOperationOldFiles.id == 1).values(
+                    old_logs_cleanup=task)
+                await session.execute(stmt)
+                await session.commit()
+
+                logger.info(f"old_logs_cleanup updated to {task}")
+                return True
+
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"[ERROR] Error updating old_logs_cleanup: {e}")
+                return False
