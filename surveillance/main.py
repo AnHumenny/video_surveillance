@@ -17,7 +17,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from celery_task import tasks
-from surveillance.schemas.repository import Cameras, User
+from surveillance.schemas.repository import Cameras, User, OldFiles
 from surveillance.camera_manager import CameraManager
 from logs.logging_config import get_logger
 from surveillance.utils.rtsp_utils import mask_rtsp_credentials, check_rtsp, PASSWORD_PATTERN
@@ -192,13 +192,17 @@ async def control():
     all_cameras = await Cameras.select_all_cam()
     all_users = await User.select_all_users()
     current_range = await Cameras.select_find_cam()
+    old_files_weekly = await OldFiles.select_status_old_video()
+    old_files_logs = await OldFiles.select_status_old_logs()
     masked_urls = {cam.id: mask_rtsp_credentials(cam.path_to_cam) for cam in all_cameras}
     user_host = os.getenv("HOST")
     user_port = os.getenv("PORT")
+
     messages = get_flashed_messages(with_categories=True)
     return await render_template('control.html', all_cameras=all_cameras, all_users=all_users,
                                  host=user_host, port=user_port, messages=messages, status='admin',
-                                 current_range=current_range, masked_urls=masked_urls)
+                                 current_range=current_range, masked_urls=masked_urls,
+                                 old_files_weekly=old_files_weekly, old_files_logs=old_files_logs)
 
 
 @app.route('/delete_camera/<int:ssid>', methods=['GET', 'POST'])
@@ -297,6 +301,28 @@ async def edit_cam():
                            send_mail, send_telegram, send_video_tg,
                            )
     await flash("Camera updated successfully!", "user_success")
+    return redirect(url_for("control"))
+
+
+@app.route('/celery_old_video', methods=['POST'])
+@token_required
+async def celery_old_video():
+    """editing status celery task."""
+    form_data = await request.form
+    old_video = form_data.get("weekly_recordings_cleanup")
+
+    await OldFiles.celery_old_video(old_video)
+    return redirect(url_for("control"))
+
+
+@app.route('/celery_old_logs_cleanup', methods=['POST'])
+@token_required
+async def celery_old_logs_cleanup():
+    """editing status celery task."""
+    form_data = await request.form
+    old_logs = form_data.get("old_logs_cleanup")
+
+    await OldFiles.celery_old_logs(old_logs)
     return redirect(url_for("control"))
 
 
