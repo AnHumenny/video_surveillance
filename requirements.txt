@@ -1,6 +1,5 @@
 aiogram>=3.23.0
-dotenv~=0.9.9
-python-dotenv~=1.1.0
+python-dotenv~=1.2.2
 opencv-python~=4.11.0.86
 python-nmap~=0.7.1
 PyJWT>=2.12.0
@@ -15,9 +14,15 @@ aiosmtplib==4.0.1
 email_validator==2.2.0
 httpx==0.28.1
 ffmpeg-python~=0.2.0
-aiogram>=3.22.0
 requests~=2.33.0
 aioredis~=2.0.1
-urllib3>=2.6.3
+urllib3>=2.6.3,<3.0
 Werkzeug>=3.1.5
-aiohttp==3.13.4
+aiohttp>=3.14.1
+cryptography>=49.0.0
+cffi>=2.0.0
+marshmallow>=4.3.0
+nltk>=3.9.4
+regex>=2026.6.28
+rich>=15.0.0
+pygments>=2.20.0
