@@ -563,9 +563,13 @@ async def logout():
 
 shutdown_event = asyncio.Event()
 
+def _request_shutdown():
+    """Signal-safe helper to set the shutdown event."""
+    shutdown_event.set()
+
 async def handle_shutdown():
     """signal handler for application shutdown."""
-    shutdown_event.set()
+    _request_shutdown()
 
 
 async def shutdown_trigger():
@@ -575,10 +579,19 @@ async def shutdown_trigger():
 
 
 async def cleanup():
-    """Shutdown"""
-    logger.info("[INFO] Shutdown...")
-    stop_sh_path = os.path.join(script_dir, "../stop.sh")
-    subprocess.run([stop_sh_path])
+    """Gracefully shut down the camera manager without external scripts.
+
+    Replaces the previous `subprocess.run([stop.sh])` call, which blocked
+    the event loop and bypassed asyncio task cancellation. We delegate the
+    actual teardown to CameraManager.shutdown(), which is async-safe.
+    """
+    logger.info("[INFO] Application cleanup started")
+    if camera_manager is not None:
+        try:
+            await camera_manager.shutdown()
+        except Exception as e:
+            logger.error(f"[ERROR] CameraManager shutdown failed: {e}", exc_info=True)
+    logger.info("[INFO] Application cleanup finished")
 
 
 async def main(host: str, port: int, debug: bool = False):
@@ -595,16 +608,28 @@ async def main(host: str, port: int, debug: bool = False):
     try:
         await serve(app, config, shutdown_trigger=shutdown_trigger)
     finally:
-        logger.info("[INFO] All cameras stopped.")
+        # Make sure resources are released even if serve() raises
+        await cleanup()
 
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+    def _on_signal():
+        # Use the loop from inside the handler to avoid race conditions
+        try:
+            loop.call_soon_threadsafe(_request_shutdown)
+        except RuntimeError:
+            _request_shutdown()
+
     try:
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, loop.stop)  # noqa:ARG
+            try:
+                loop.add_signal_handler(sig, _request_shutdown)
+            except (NotImplementedError, RuntimeError):
+                # Fallback for environments without signal handler support (e.g. some threads)
+                signal.signal(sig, _on_signal)
     except (NotImplementedError, RuntimeError) as e:
         logger.warning(f"[WARNING] Could not set signal handler: {e}")
 
@@ -617,16 +642,21 @@ if __name__ == "__main__":
         )
     except KeyboardInterrupt:
         logger.info("[INFO] Received interrupt signal")
+        _request_shutdown()
     except Exception as e:
         logger.error(f"[ERROR] Application error: {e}")
     finally:
+        try:
+            # Run cleanup before tearing the loop down
+            loop.run_until_complete(cleanup())
+        except Exception as e:
+            logger.error(f"[ERROR] Cleanup error: {e}")
         try:
             pending = asyncio.all_tasks(loop)
             if pending:
                 logger.info("[INFO] Cancelling pending tasks")
                 for task in pending:
                     task.cancel()
-
                 loop.run_until_complete(
                     asyncio.gather(*pending, return_exceptions=True)
                 )
