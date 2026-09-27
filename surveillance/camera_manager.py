@@ -55,6 +55,7 @@ class CameraManager:
         self.background_subtractors = {
             cam_id: cv2.createBackgroundSubtractorMOG2() for cam_id in self.camera_configs
         }
+        self._shutdown = False
 
 
     async def initialize(self, timeout_per_camera: int = 5) -> None:
@@ -325,14 +326,17 @@ class CameraManager:
         end_time = time.time() + duration_sec
 
 
-        while time.time() < end_time:
-            try:
-                frame = await asyncio.wait_for(queue.get(), timeout=2)
-                await loop.run_in_executor(self.executor, out.write, frame)
-            except asyncio.TimeoutError:
-                continue
-
-        await loop.run_in_executor(self.executor, out.release)
+        try:
+            while time.time() < end_time and not self._shutdown:
+                try:
+                    frame = await asyncio.wait_for(queue.get(), timeout=2)
+                    await loop.run_in_executor(self.executor, out.write, frame)
+                except asyncio.TimeoutError:
+                    continue
+                except asyncio.CancelledError:
+                    break
+        finally:
+            await loop.run_in_executor(self.executor, out.release)
 
         return full_path
 
@@ -350,25 +354,38 @@ class CameraManager:
         async def reader():
             """Camera reading loop with graceful shutdown"""
             loop = asyncio.get_running_loop()
-            while not stop_event.is_set():
-                def read():
-                    ret, frm = cap.read()
-                    return frm if ret else None
+            try:
+                while not stop_event.is_set() and not self._shutdown:
+                    def read():
+                        ret, frm = cap.read()
+                        return frm if ret else None
 
-                frame = await loop.run_in_executor(self.executor, read)
-                if frame is None:
-                    ok = await self._try_reconnect(cam_id)
-                    if not ok:
-                        await asyncio.sleep(1)
-                    continue
+                    frame = await loop.run_in_executor(self.executor, read)
+                    if frame is None:
+                        ok = await self._try_reconnect(cam_id)
+                        if not ok:
+                            await asyncio.sleep(1)
+                        continue
 
-                if queue.full():
-                    try:
-                        queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        pass
-                await queue.put(frame)
-                await asyncio.sleep(self.frame_period)
+                    if queue.full():
+                        try:
+                            queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                    await queue.put(frame)
+                    await asyncio.sleep(self.frame_period)
+
+            except asyncio.CancelledError:
+                logger.debug(f"[DEBUG] Reader for {cam_id} cancelled")
+                raise
+            except Exception as e:
+                logger.error(f"[ERROR] Reader for {cam_id} crashed: {e}", exc_info=True)
+            finally:
+                try:
+                    await loop.run_in_executor(self.executor, cap.release)
+                except Exception:
+                    pass
+                logger.info(f"[INFO] Reader for {cam_id} stopped")
 
         task = asyncio.create_task(reader(), name=f"reader-{cam_id}")
         self.cameras[cam_id]["task"] = task
@@ -385,23 +402,25 @@ class CameraManager:
         if not cam_entry:
             return
         task: asyncio.Task = cam_entry.get("task")  # type: ignore
-        cap: cv2.VideoCapture = cam_entry.get("cap")  # type: ignore
-
+        stop_event: asyncio.Event = cam_entry.get("stop_event")  # type: ignore
+        if stop_event is not None:
+            stop_event.set()
         if task:
-            task.cancel()
             try:
-                await task
+                await asyncio.wait_for(task, timeout=3.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"[WARN] Reader for {cam_id} did not stop in time, cancelling")
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
             except asyncio.CancelledError:
                 logger.debug(f"[DEBUG] Task for camera {cam_id} cancelled")
             except Exception as e:
                 logger.error(f"[ERROR] Error cancelling task for {cam_id}: {e}", exc_info=True)
-        if cap:
-            try:
-                await asyncio.get_running_loop().run_in_executor(self.executor, cap.release)
-                logger.info(f"[INFO] Camera {cam_id} reader stopped")
-            except Exception as e:
-                logger.error(f"[ERROR] Error releasing VideoCapture for {cam_id}: {e}", exc_info=True)
         self.cameras.pop(cam_id, None)
+
 
     async def _safe_create_capture_with_timeout(self, cam_id: str, url: str, timeout: int):
         """Create cv2.VideoCapture with timeout and error handling.
@@ -504,26 +523,29 @@ class CameraManager:
         cv2.putText(frame_with_text, text, (text_x, text_y), font, font_scale, color, thickness)
         await loop.run_in_executor(self.executor, out.write, frame_with_text)
 
-        while self.recording_flags.get(cam_id):
-            try:
-                frame = await asyncio.wait_for(queue.get(), timeout=2)
+        try:
+            while self.recording_flags.get(cam_id) and not self._shutdown:
+                try:
+                    frame = await asyncio.wait_for(queue.get(), timeout=2)
 
-                frame_with_text = frame.copy()
-                cv2.circle(frame_with_text, circle_center, circle_radius, (0, 0, 255), -1)
-                cv2.putText(frame_with_text, text, (text_x, text_y), font, font_scale, color, thickness)
+                    frame_with_text = frame.copy()
+                    cv2.circle(frame_with_text, circle_center, circle_radius, (0, 0, 255), -1)
+                    cv2.putText(frame_with_text, text, (text_x, text_y), font, font_scale, color, thickness)
 
-                await loop.run_in_executor(self.executor, out.write, frame_with_text)
-            except asyncio.TimeoutError:
-                continue
-
-        await loop.run_in_executor(self.executor, out.release)
+                    await loop.run_in_executor(self.executor, out.write, frame_with_text)
+                except asyncio.TimeoutError:
+                    continue
+                except asyncio.CancelledError:
+                    break
+        finally:
+            await loop.run_in_executor(self.executor, out.release)
 
         return full_path
 
 
     async def record_loop(self, cam_id: str):
         """Continuous loop of 30s video recordings while flag is True."""
-        while self.recording_flags.get(cam_id, False):
+        while self.recording_flags.get(cam_id, False) and not self._shutdown:
             full_path = self.generate_video_path(cam_id)
 
             cam_entry = self.cameras.get(cam_id)
@@ -620,6 +642,8 @@ class CameraManager:
             return False
 
         for attempt in range(1, attempts + 1):
+            if self._shutdown:
+                return False
             cap = await self._create_capture(cam_id, url)
             if cap:
                 await asyncio.get_running_loop().run_in_executor(self.executor, self.cameras[cam_id]['cap'].release)
@@ -627,3 +651,33 @@ class CameraManager:
                 return True
             await asyncio.sleep(delay)
         return False
+
+
+    async def shutdown(self) -> None:
+        """Gracefully stop recording tasks, camera readers, and the executor."""
+        if self._shutdown:
+            return
+        self._shutdown = True
+        logger.info("[INFO] CameraManager: graceful shutdown started")
+
+        tasks = list(self.recording_tasks.items())
+        for cam_id, task in tasks:
+            self.recording_flags[cam_id] = False
+            if task:
+                task.cancel()
+        for _, task in tasks:
+            if task:
+                try:
+                    await asyncio.wait_for(task, timeout=3.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    pass
+                except Exception as e:
+                    logger.error(f"[ERROR] Recording task shutdown failed: {e}", exc_info=True)
+        self.recording_tasks.clear()
+
+        await asyncio.gather(
+            *(self._stop_camera_reader(cam_id) for cam_id in list(self.cameras)),
+            return_exceptions=True,
+        )
+        self.executor.shutdown(wait=True)
+        logger.info("[INFO] CameraManager: graceful shutdown finished")

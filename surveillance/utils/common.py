@@ -1,5 +1,5 @@
 from quart import render_template
-from surveillance.main import camera_manager
+from surveillance import state
 from surveillance.schemas.repository import Cameras, User
 
 
@@ -19,4 +19,4 @@ async def select_all_users():
 
 async def force_start_cam(cam_id):
     """Forcing the camera to start(bot)"""
-    await camera_manager.reinitialize_camera(cam_id)
+    await state.camera_manager.reinitialize_camera(cam_id)
