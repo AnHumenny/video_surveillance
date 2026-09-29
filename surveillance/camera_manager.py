@@ -21,7 +21,7 @@ class CameraManager:
     `async_lock` assertion you were hitting.
     """
 
-    def __init__(self, max_queue_size: int = 10, fps: float = 30.0):
+    def __init__(self, max_queue_size: int = 2, fps: float = 30.0):
         """Initialize CameraManager by loading configs and setting up runtime structures."""
         camera_config_json = Cameras.select_all_cameras_to_json()
         self.recording_flags = {}
@@ -49,12 +49,15 @@ class CameraManager:
 
         self.fps = fps
         self.frame_period = 1.0 / fps
-        self.max_queue_size = max_queue_size
+        self.max_queue_size = max(1, max_queue_size)
+        self.max_frame_width = max(1, int(os.getenv("CAMERA_MAX_FRAME_WIDTH", "1280")))
+        self.max_frame_height = max(1, int(os.getenv("CAMERA_MAX_FRAME_HEIGHT", "720")))
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.cameras: Dict[str, Dict[str, object]] = {}
         self.background_subtractors = {
-            cam_id: cv2.createBackgroundSubtractorMOG2() for cam_id in self.camera_configs
+            cam_id: self._create_background_subtractor() for cam_id in self.camera_configs
         }
+        self._morphology_kernel = np.ones((5, 5), np.uint8)
         self._shutdown = False
 
 
@@ -67,6 +70,11 @@ class CameraManager:
         tasks = [self._start_camera_reader(cam_id, url, timeout_per_camera)
                  for cam_id, url in self.camera_configs.items()]
         await asyncio.gather(*tasks)
+
+    @staticmethod
+    def _create_background_subtractor():
+        """Use a shorter model history and avoid the extra shadow mask plane."""
+        return cv2.createBackgroundSubtractorMOG2(history=200, detectShadows=False)
 
 
     async def load_camera_configs(self) -> bool:
@@ -89,7 +97,7 @@ class CameraManager:
         for cam_id, url in new_configs.items():
             if cam_id not in self.camera_configs:
                 self.camera_configs[cam_id] = url
-                self.background_subtractors[cam_id] = cv2.createBackgroundSubtractorMOG2()
+                self.background_subtractors[cam_id] = self._create_background_subtractor()
                 await self._start_camera_reader(cam_id, url, timeout=5)
 
         for cam_id in list(self.camera_configs.keys()):
@@ -153,6 +161,12 @@ class CameraManager:
 
         loop = asyncio.get_running_loop()
         subtractor = self.background_subtractors[cam_id]
+        source_size = cam_entry.get("source_size")
+        if points and source_size:
+            source_width, source_height = source_size
+            frame_height, frame_width = frame.shape[:2]
+            scale_x, scale_y = frame_width / source_width, frame_height / source_height
+            points = [(round(x * scale_x), round(y * scale_y)) for x, y in points]
         screenshot_path = None
         video_path: Optional[str] = None
 
@@ -160,7 +174,7 @@ class CameraManager:
             """Motion detection with object tracking, screenshot saving, and record trigger."""
             nonlocal screenshot_path
 
-            processed = frm.copy()
+            processed = frm.copy() if (show_zone or self.recording_flags.get(cam_id)) else frm
             now = time.time()
             last_time = self.last_screenshot_times.get(cam_id, 0)
             should_record = False
@@ -168,9 +182,8 @@ class CameraManager:
             if save_screenshot or send_video_tg or show_zone:
                 try:
                     fg_mask = subtractor.apply(frm)
-                    kernel = np.ones((5, 5), np.uint8)
-                    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
-                    fg_mask = cv2.dilate(fg_mask, kernel, iterations=2)
+                    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, self._morphology_kernel)
+                    fg_mask = cv2.dilate(fg_mask, self._morphology_kernel, iterations=2)
                     contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
                     min_area = 1500
@@ -266,15 +279,9 @@ class CameraManager:
 
             return processed, screenshot_path, should_record
 
-        try:
-            processed, screenshot_path, should_record = await asyncio.wait_for(
-                loop.run_in_executor(self.executor, detect, frame),
-                timeout=0.1
-            )
-        except asyncio.TimeoutError:
-            processed = frame
-            screenshot_path = None
-            should_record = False
+        processed, screenshot_path, should_record = await loop.run_in_executor(
+            self.executor, detect, frame
+        )
 
         if send_video_tg and should_record and not self.recording_flags.get(cam_id, False):
             self.recording_flags[cam_id] = True
@@ -349,7 +356,10 @@ class CameraManager:
 
         queue: asyncio.Queue = asyncio.Queue(maxsize=self.max_queue_size)
         stop_event = asyncio.Event()
-        self.cameras[cam_id] = {"cap": cap, "queue": queue, "stop_event": stop_event}
+        self.cameras[cam_id] = {
+            "cap": cap, "queue": queue, "stop_event": stop_event,
+            "source_size": None, "current_frame": None,
+        }
 
         async def reader():
             """Camera reading loop with graceful shutdown"""
@@ -366,6 +376,22 @@ class CameraManager:
                         if not ok:
                             await asyncio.sleep(1)
                         continue
+
+                    original_height, original_width = frame.shape[:2]
+                    self.cameras[cam_id]["source_size"] = (original_width, original_height)
+                    scale = min(
+                        1.0,
+                        self.max_frame_width / original_width,
+                        self.max_frame_height / original_height,
+                    )
+                    if scale < 1.0:
+                        frame = cv2.resize(
+                            frame,
+                            (max(1, round(original_width * scale)),
+                             max(1, round(original_height * scale))),
+                            interpolation=cv2.INTER_AREA,
+                        )
+                    self.cameras[cam_id]["current_frame"] = frame
 
                     if queue.full():
                         try:
@@ -420,6 +446,9 @@ class CameraManager:
             except Exception as e:
                 logger.error(f"[ERROR] Error cancelling task for {cam_id}: {e}", exc_info=True)
         self.cameras.pop(cam_id, None)
+        self.tracked_objects.pop(cam_id, None)
+        self.last_screenshot_times.pop(cam_id, None)
+        self.prev_centroids.pop(cam_id, None)
 
 
     async def _safe_create_capture_with_timeout(self, cam_id: str, url: str, timeout: int):
@@ -468,11 +497,7 @@ class CameraManager:
         """make current screenshot"""
         cam_data = self.cameras.get(cam_id)
         if cam_data:
-            cap = cam_data.get("cap")
-            if cap:
-                cap: Optional[cv2.VideoCapture] = cam_data.get("cap")
-                ret, frame = cap.read()
-                return frame if ret else None
+            return cam_data.get("current_frame")
         return None
 
 
@@ -620,7 +645,7 @@ class CameraManager:
             await self._stop_camera_reader(cam_id)
 
         self.camera_configs[cam_id] = single_config[cam_id]
-        self.background_subtractors[cam_id] = cv2.createBackgroundSubtractorMOG2()
+        self.background_subtractors[cam_id] = self._create_background_subtractor()
 
         await self._start_camera_reader(cam_id, self.camera_configs[cam_id], timeout=5)
         return True

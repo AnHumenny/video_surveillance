@@ -44,7 +44,7 @@ CELERY_WORKER_LOGFILE="logs/celery_worker_${LOG_TIMESTAMP}.log"
 CELERY_BEAT_LOGFILE="logs/celery_beat_${LOG_TIMESTAMP}.log"
 
 echo "[INFO] Starting surveillance with Hypercorn on port $PORT..."
-hypercorn surveillance.main:app --bind 0.0.0.0:"$PORT" &
+hypercorn surveillance.main:app --bind 0.0.0.0:"$PORT" --workers 1 &
 echo "$!" > main.pid
 
 echo "[INFO] Starting bot.app..."
