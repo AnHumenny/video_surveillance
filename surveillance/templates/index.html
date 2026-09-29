@@ -3,9 +3,9 @@
     <div class="container">
         <div class="header">
             {% if username %}
-                <span>Привет, {{ username }}</span> &nbsp;&nbsp;&nbsp;
+                <span>Приветик, {{ username }}</span> &nbsp;&nbsp;&nbsp;
                 {% if status == "admin" %}
-                    <a href="{{ url_for('control') }}"><h4>Панель управления</h4></a>
+                    <a href="{{ url_for('control.control') }}"><h4>Панель управления</h4></a>
                 {% endif %}
             {% endif %}
         </div>
@@ -18,7 +18,7 @@
         <div class="camera-grid">
             {% for cam_id, url in camera_configs.items() %}
                 <div class="camera-grid-item">
-                    <a href="{{ url_for('view_camera', cam_id=cam_id) }}" class="camera-btn">
+                    <a href="{{ url_for('cameras.view_camera', cam_id=cam_id) }}" class="camera-btn">
                         Камера {{ cam_id }}
                     </a>
                 </div>

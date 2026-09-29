@@ -75,29 +75,33 @@ chmod +x start.sh
 
 ### Структура проекта
 ```
-video_surveillance/
-├── .venv/ # Виртуальное окружение Python
-├── bot/ # Telegram-бот
+Project/
+├── bot/                          # Telegram-бот
 │ ├── init.py
 │ ├── app.py
 │ └── utils/
-│ ├── jwt_utils.py # JWT токены и авторизация
-│ └── lists.py
+│   ├── jwt_utils.py              # JWT токены и авторизация
+│   ├── keyboard_utils.py                
+│   ├── password_utils.py               
+│   └── lists.py
 │
-├── celery_task/ # Celery задачи
+├── celery_task/                  # Celery задачи
 │ ├── init.py
 │ ├── celery_app.py
+│ ├── claenup_service.py
+│ ├── messages_utils.py
+│ ├── path_utils.py
 │ └── tasks.py
 │
-├── config/ # Конфигурация
+├── config/                       # Конфигурация
 │ ├── init.py
 │ └── config.py
 │
 ├── logs/
-│ ├── YYYY-MM-DD/ # Логи приложения
+│ ├── YYYY-MM-DD/                 # Логи приложения
 │ └── logging_config.py
 │
-├── media/ # Медиафайлы
+├── media/                        # Медиафайлы
 │ ├── current/
 │ │   ├── movie/
 │ │   └── screenshots/
@@ -108,46 +112,54 @@ video_surveillance/
 │ │    └── cam_***/
 │ └── screenshots/
 │
-├── surveillance/ # Основной проект
-│ ├── init.py
-│ ├── camera_manager.py
-│ ├── main.py
-│ │
-│ ├── schemas/ # Схемы и модели БД
-│ │ ├── init.py
-│ │ ├── database.py
-│ │ └── repository.py
-│ │
-│ ├── static/ # Статические файлы
-│ │ ├── image/ # Изображения интерфейса
-│ │ └── style/ # Стили CSS
-│ │
-│ ├── templates/ # HTML шаблоны
-│ │ ├── menu/ # Шаблоны меню
-│ │ │ ├── menu_auth.html
-│ │ │ └── menu_top.html
-│ │ ├── camera_view.html
-│ │ ├── control.html
-│ │ ├── head.html
-│ │ ├── index.html
-│ │ └── login.html
-│ │
-│ └── utils/
-│ ├── common.py # Общие утилиты и хелперы
-│ ├── hash_utils.py # Хеширование паролей
-│ ├── jwt_utils.py # JWT токены и авторизация
-│ └── rtsp_utils.py # rtsp
+├── surveillance/                 # Основной проект
+│   ├── routes/                   # Маршруты (Роутеры)
+│   │   ├── __init__.py
+│   │   ├── api.py
+│   │   ├── auth.py
+│   │   ├── cameras.py
+│   │   └── control.py
+│   │
+│   ├── schemas/                  # Схемы и модели БД
+│   │   ├── __init__.py
+│   │   ├── database.py
+│   │   └── repository.py
+│   │
+│   ├── static/                   # Статические файлы
+│   │   └── ...                   # Изображения, стили CSS
+│   │
+│   ├── templates/                # HTML шаблоны
+│   │   ├── menu/                 # Шаблоны меню
+│   │   │   ├── menu_auth.html
+│   │   │   └── menu_top.html
+│   │   ├── camera_view.html
+│   │   ├── control.html
+│   │   ├── head.html
+│   │   ├── index.html
+│   │   └── login.html
+│   │
+│   ├── utils/                    # Утилиты и хелперы
+│   │   ├── install/              # Скрипты установки
+│   │   │   └── ...               
+│   │   ├── common.py             # Общие утилиты
+│   │   ├── hash_utils.py         # Хеширование паролей
+│   │   ├── jwt_utils.py          # JWT токены и авторизация
+│   │   └── rtsp_utils.py         # Работа с RTSP
+│   ├── camera_manager.py         # Управление камерами
+│   ├── cleanup.py                # Очистка данных
+│   └── state.py                  # Управление состоянием
 │
-├── .dockerignore # Docker игнорирование
-├── .env # Переменные окружения
-├── .gitignore # Git игнорирование
-├── db_camera.db # База данных SQLite
-├── Dockerfile # Docker конфигурация
-├── env_example.txt # Пример .env файла
-├── README.md # Документация проекта
-├── requirements.txt # Зависимости Python
-├── start.sh # Скрипт запуска
-└── stop.sh # Скрипт остановки
+├── .dockerignore                 # Docker игнорирование
+├── .env                          # Переменные окружения
+├── .gitignore                    # Git игнорирование
+├── db_camera.db                  # База данных SQLite (в корне)
+├── Dockerfile                    # Docker конфигурация
+├── env_example.txt               # Пример .env файла
+├── main.py                       # Точка входа (в корне)
+├── ReadMe.md                     # Документация проекта
+├── requirements.txt              # Зависимости Python
+├── start.sh                      # Скрипт запуска
+└── stop.sh                       # Скрипт остановки
 
 
 # Структура базы данных

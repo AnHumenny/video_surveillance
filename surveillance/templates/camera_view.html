@@ -2,11 +2,11 @@
 
 <body>
   <div class="header">
-    <a href="{{ url_for('index') }}">
+    <a href="{{ url_for('auth.index') }}">
       <img src="{{ url_for('static', filename='image/home.png') }}" alt="Главная"></a>
-    <a href="{{ url_for('control') }}">
+    <a href="{{ url_for('control.control') }}">
       <img src="{{ url_for('static', filename='image/admin.png') }}" alt="Панель управления"></a>
-    <a href="{{ url_for('logout') }}">
+    <a href="{{ url_for('auth.logout') }}">
       <img src="{{ url_for('static', filename='image/exit.png') }}" alt="Выйти"></a>
   </div>
 
@@ -14,7 +14,7 @@
     <div class="camera-sidebar">
       <div id="notification" class="notification">
         {% for cam_id, url in all_cameras.items() %}
-          <a href="{{ url_for('view_camera', cam_id=cam_id) }}">
+          <a href="{{ url_for('cameras.view_camera', cam_id=cam_id) }}">
             <button class="camera-btn">Камера {{ cam_id }}</button>
           </a>
         {% endfor %}
@@ -26,7 +26,7 @@
         <div class="toolbar-buttons">
           <button onclick="captureScreenshot()" class="camera-btn" style="width: auto;">Сделать скриншот</button>
           <button onclick="toggleRecording('{{ cam_id }}')">Старт/Стоп запись</button>
-          <form action="{{ url_for('clear_count') }}" method="post" style="display:inline;">
+          <form action="{{ url_for('cameras.clear_count') }}" method="post" style="display:inline;">
     <input type="hidden" name="cam_id" value="{{ cam_id }}">
     <button type="submit" class="clear-btn">Сбросить счётчик</button>
 </form>

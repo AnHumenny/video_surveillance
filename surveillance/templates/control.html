@@ -13,7 +13,7 @@
                 <div class="add-camera">
                     <h5>Указать диапазон поиска</h5>
                     <h6><i>Актуальный диапазон поиска {{ current_range }}</i></h6>
-                    <form method="post" action="{{ url_for('update_route') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
+                    <form method="post" action="{{ url_for('control.update_route') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 10px;">
                         <input type="text" name="cam_host" id="cam_host" placeholder="192.168.1.1" required>
                         <input type="text" name="subnet_mask" placeholder="24" required>
                         <input type="submit" value="Добавить">
@@ -26,7 +26,7 @@
 
                 <div class="add-camera">
                     <h5>Добавить камеру</h5>
-                    <form method="post" action="{{ url_for('add_new_camera') }}" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 10px;">
+                    <form method="post" action="{{ url_for('control.add_new_camera') }}" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 10px;">
                         <div>
                             <label for="new_cam">Маршрут:</label>
                             <input type="text" name="new_cam" id="new_cam" placeholder="rtsp://user:password@192.168.1.4:554/" required>
@@ -71,7 +71,7 @@
 
                 <div class="add-user">
                     <h5>Добавить пользователя</h5>
-                    <form method="post" action="{{ url_for('add_new_user') }}" enctype="multipart/form-data" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+                    <form method="post" action="{{ url_for('control.add_new_user') }}" enctype="multipart/form-data" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
                         <input type="text" name="new_user" id="new_user" placeholder="Имя пользователя" required>
                         <input type="text" name="new_password" id="new_password" placeholder="Пароль" required>
                         <input type="text" name="tg_id" id="tg_id" placeholder="Telegram ID" required>
@@ -94,7 +94,7 @@
                     {% for row in all_users %}
                         <div class="camera-item">
                             {{ row.id }} || {{ row.user }} || {{ row.status }}
-                            <a href="{{ url_for('delete_user', ssid=row.id) }}">
+                            <a href="{{ url_for('control.delete_user', ssid=row.id) }}">
                                 <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить">
                             </a>
                         </div>
@@ -229,15 +229,15 @@ async function sendToAddCamera(address) {
                                 '{{ row.coordinate_x2 }}',
                                 '{{ row.coordinate_y1 }}',
                                 '{{ row.coordinate_y2 }}',
-                                '{{ url_for('edit_cam', ssid=row.id) }}'
+                                '{{ url_for('control.edit_cam', ssid=row.id) }}'
                             )">
                                 <img src="{{ url_for('static', filename='image/edit.png') }}" alt="Редактировать" title="Редактировать маршрут">
                             </a>
 
-                            <a href="{{ url_for('delete_camera', ssid=row.id) }}">
+                            <a href="{{ url_for('control.delete_camera', ssid=row.id) }}">
                                 <img src="{{ url_for('static', filename='image/trash.png') }}" alt="Удалить" title="Удалить">
                             </a>
-                            <a href="{{ url_for('force_stop_cam', cam_id=row.id) }}">
+                            <a href="{{ url_for('cameras.force_stop_cam', cam_id=row.id) }}">
                                 <img src="{{ url_for('static', filename='image/photocamera-cancel.png') }}" alt="Остановить камеру" title="Остановить камеру">
                             </a>
                         </div>
@@ -247,7 +247,7 @@ async function sendToAddCamera(address) {
                     <h4 style="margin-top: 0; margin-bottom: 15px; color: #495057;">Настройки очистки старых файлов</h4>
                         <div style="display: flex; flex-direction: column; gap: 12px;">
 
-                            <form method="post" action="{{ url_for('celery_old_video') }}" enctype="multipart/form-data" style="display: flex; flex-direction: row; align-items: center; gap: 15px;">
+                            <form method="post" action="{{ url_for('control.celery_old_video') }}" enctype="multipart/form-data" style="display: flex; flex-direction: row; align-items: center; gap: 15px;">
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <input type="checkbox"
                                     name="weekly_recordings_cleanup"
@@ -261,7 +261,7 @@ async function sendToAddCamera(address) {
                                 <input type="submit" value="Изменить" style="padding: 5px 15px; cursor: pointer;">
                             </form>
 
-                            <form method="post" action="{{ url_for('celery_old_logs_cleanup') }}" enctype="multipart/form-data" style="display: flex; flex-direction: row; align-items: center; gap: 15px;">
+                            <form method="post" action="{{ url_for('control.celery_old_logs_cleanup') }}" enctype="multipart/form-data" style="display: flex; flex-direction: row; align-items: center; gap: 15px;">
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <input type="checkbox"
                                     name="old_logs_cleanup"
